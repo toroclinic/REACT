@@ -1,0 +1,14 @@
+node_modules/
+.gradle/
+build/
+*.keystore
+.env
+ios/Pods/
+ios/build/
+android/build/
+android/app/build/
+*.orig.*
+*.jks
+.bundle/
+.DS_Store
+Thumbs.db

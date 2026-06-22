@@ -1,0 +1,38 @@
+<!--
+  Info.plist additions required for WellnessPlus, layered onto whatever
+  the React Native CLI scaffolds into ios/WellnessPlus/Info.plist.
+  Merge these keys into the generated file — do not replace it wholesale,
+  since the CLI-generated plist also carries required RN boilerplate
+  (NSAppTransportSecurity dev exceptions, CFBundle* keys, etc.) not
+  reproduced here.
+-->
+<plist version="1.0">
+<dict>
+
+  <!-- Required so TaskRow / ActivityScreen / ScreeningScreen icons render
+       (react-native-vector-icons, MaterialCommunityIcons family). -->
+  <key>UIAppFonts</key>
+  <array>
+    <string>MaterialCommunityIcons.ttf</string>
+  </array>
+
+  <!-- ScreeningScreen.tsx calls ClinicApi.nearby() — requesting device
+       location is flagged there as a follow-up; this key is required
+       before that permission prompt can be shown. -->
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Wellness+ uses your location to find the nearest partner clinic for screenings.</string>
+
+  <!-- HealthKit — read workout sessions recorded by Apple Watch.
+       Both keys are required: ShareUsage for write (unused but mandatory),
+       UpdateUsage for the actual read permission the app requests. -->
+  <key>NSHealthShareUsageDescription</key>
+  <string>Wellness+ reads your Apple Watch workouts, blood oxygen readings, and sleep data to automatically log health check-ins and update your wellness score.</string>
+  <key>NSHealthUpdateUsageDescription</key>
+  <string>Wellness+ may write activity data to HealthKit in a future update.</string>
+
+  <!-- Minimum supported iOS version, matches ios/Podfile platform line. -->
+  <key>MinimumOSVersion</key>
+  <string>13.4</string>
+
+</dict>
+</plist>

@@ -1,0 +1,40 @@
+// Root build.gradle — project-level config, generated ios/ equivalent.
+// Merge into whatever `npx react-native init` scaffolds; this repo's
+// version pins the SDK/tooling versions this app was specified against
+// (Frontend & Backend Spec, Section 3.1: React Native 0.74.x).
+
+buildscript {
+    ext {
+        buildToolsVersion = "34.0.0"
+        minSdkVersion = 26  // Health Connect requires API 26+
+        compileSdkVersion = 34
+        targetSdkVersion = 34
+        // Hermes is the default JS engine for RN 0.74 — matches the
+        // Podfile's :hermes_enabled => true on the iOS side, so JS
+        // behavior (including pricingMirror.ts's scoring math) is
+        // identical across platforms.
+        ndkVersion = "26.1.10909125"
+        kotlinVersion = "1.9.24"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    }
+}
+
+allprojects {
+    repositories {
+        maven { url("$rootDir/../node_modules/react-native/android") }
+        maven { url("$rootDir/../node_modules/jsc-android/dist") }
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
+    }
+}
+
+apply plugin: "com.facebook.react.rootproject"

@@ -1,0 +1,39 @@
+# Podfile — generated ios/ directory will include this after running
+# `npx react-native init` per the setup steps in README.md. Included here
+# so the exact native dependency list (vector-icons font registration,
+# minimum iOS version) is part of the source-controlled spec, not left to
+# whatever the CLI scaffolds by default.
+
+require_relative '../node_modules/react-native/scripts/react_native_pods'
+require_relative '../node_modules/@react-native-community/cli-platform-ios/native_modules'
+
+platform :ios, '13.4'
+prepare_react_native_project!
+
+target 'WellnessPlus' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    :hermes_enabled => true
+  )
+
+  # react-native-vector-icons font files must be linked — see
+  # ios/WellnessPlus/Info.plist UIAppFonts array, which must list every
+  # .ttf this pod installs (MaterialCommunityIcons.ttf at minimum, given
+  # TaskRow.tsx / ActivityScreen.tsx / ScreeningScreen.tsx usage).
+  pod 'RNVectorIcons', :path => '../node_modules/react-native-vector-icons'
+
+  # react-native-health — HealthKit bridge for Apple Watch workout sync.
+  # The :path form is required (no CocoaPods registry entry); capabilities
+  # must also enable HealthKit in Xcode: Signing & Capabilities → + → HealthKit.
+  pod 'RCTAppleHealthKit', :path => '../node_modules/react-native-health'
+
+  post_install do |installer|
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false
+    )
+  end
+end

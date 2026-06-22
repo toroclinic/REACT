@@ -1,0 +1,7 @@
+<resources>
+    <!-- Mirrors colors.white in src/theme/tokens.ts — keep these two
+         values in sync if the design system's base background ever
+         changes, or the native launch background will drift from the
+         JS-rendered screen background. -->
+    <color name="app_background">#FFFFFF</color>
+</resources>

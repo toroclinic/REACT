@@ -1,0 +1,43 @@
+package com.wellnessplus
+
+import android.app.Application
+import com.facebook.react.PackageList
+import com.facebook.react.ReactApplication
+import com.facebook.react.ReactHost
+import com.facebook.react.ReactNativeHost
+import com.facebook.react.ReactPackage
+import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
+import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.facebook.react.defaults.DefaultReactNativeHost
+import com.facebook.soloader.SoLoader
+
+class MainApplication : Application(), ReactApplication {
+
+    override val reactNativeHost: ReactNativeHost =
+        object : DefaultReactNativeHost(this) {
+            // PackageList autolinks every native module declared in
+            // package.json's dependencies — react-native-vector-icons,
+            // @react-native-async-storage/async-storage,
+            // @react-native-community/netinfo, react-native-svg, and
+            // react-native-screens all register themselves here without
+            // manual entries, matching how CocoaPods autolinks the same
+            // set on iOS via use_native_modules! in ios/Podfile.
+            override fun getPackages(): List<ReactPackage> = PackageList(this).packages
+
+            override fun getJSMainModuleName(): String = "index"
+            override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
+            override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
+            override val isHermesEnabled: Boolean = true
+        }
+
+    override val reactHost: ReactHost
+        get() = getDefaultReactHost(applicationContext, reactNativeHost)
+
+    override fun onCreate() {
+        super.onCreate()
+        SoLoader.init(this, false)
+        if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
+            load()
+        }
+    }
+}

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AndroidManifest.xml — Android equivalent of ios/Info.plist.additions.xml.
+  Permissions here are derived directly from what the app's screens
+  actually do, matching the same audit that produced the iOS plist keys.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ScreeningScreen.tsx calls ClinicApi.nearby() — same justification
+         as iOS NSLocationWhenInUseUsageDescription. Coarse is sufficient;
+         the clinic-locator doesn't need precise/background location. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Required for all API calls (services/api.ts) and the offline
+         queue's connectivity check (services/offlineQueue.ts, via
+         @react-native-community/netinfo). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Notification service (Frontend & Backend Spec, Section 4.1) —
+         tier-change and reconciliation-outcome pushes. Required from
+         Android 13 (API 33) onward; without it, push silently fails on
+         new devices rather than erroring, so don't skip this. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Health Connect — read exercise sessions, SpO2, and sleep from paired watches.
+         android.permission.health.* requires the <queries> block below
+         so the app can detect whether Health Connect is installed. -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+
+    <!-- Required so getSdkStatus() can resolve the Health Connect package. -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
+
+    <application
+        android:name=".MainApplication"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:theme="@style/AppTheme"
+        android:supportsRtl="true">
+
+        <!-- Health Connect privacy policy rationale — required so the system
+             can show a rationale screen when the user taps "Learn more"
+             in the Health Connect permission dialog. -->
+        <activity
+            android:name="androidx.health.connect.client.PermissionController"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:label="@string/app_name"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

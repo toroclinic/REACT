@@ -1,0 +1,5 @@
+<resources>
+    <!-- Must match app.json's "displayName" ("Wellness+") for consistency
+         between the iOS and Android home screen labels. -->
+    <string name="app_name">Wellness+</string>
+</resources>

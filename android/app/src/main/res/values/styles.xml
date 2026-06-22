@@ -1,0 +1,10 @@
+<resources>
+    <!-- Splash/launch background matches colors.white from
+         src/theme/tokens.ts, so the native launch screen doesn't flash a
+         mismatched color before the JS bundle takes over the StatusBar
+         styling set in App.tsx. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
+</resources>

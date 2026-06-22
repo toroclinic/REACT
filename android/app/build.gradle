@@ -1,0 +1,61 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+// react-native-vector-icons font linking — Android equivalent of the iOS
+// Info.plist UIAppFonts array in ios/Info.plist.additions.xml. Without
+// this block, TaskRow.tsx / ActivityScreen.tsx / ScreeningScreen.tsx /
+// ProfileScreen.tsx icons render as blank boxes on Android specifically
+// (iOS picks the font up via the Podfile + Info.plist instead).
+project.ext.vectoricons = [
+    iconFontNames: ['MaterialCommunityIcons.ttf']
+]
+apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
+
+react {
+    autolinkLibrariesWithApp()
+}
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    namespace "com.wellnessplus"
+
+    defaultConfig {
+        applicationId "com.wellnessplus"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            // Production signing config must be supplied before any real
+            // release build — left unset deliberately rather than
+            // committing a placeholder that looks production-ready.
+            signingConfig signingConfigs.debug
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+dependencies {
+    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:hermes-android")
+}
