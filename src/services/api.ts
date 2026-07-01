@@ -1,4 +1,4 @@
-import { getAccessToken } from '../store/authStore';
+import { getAccessToken, useAuthStore } from '../store/authStore';
 import {
   OtpRequestPayload,
   OtpVerifyPayload,
@@ -84,6 +84,17 @@ async function request<T>(
   clearTimeout(timeoutId);
 
   if (!response.ok) {
+    // A 401 on an authenticated request means the session is no longer valid
+    // server-side — most commonly the idle-timeout auto-logout (see backend
+    // authService.ts). Sign out locally so App.tsx's isAuthenticated check
+    // drops straight back to LoginScreen instead of leaving the member stuck
+    // on a screen that can no longer load any data.
+    if (auth && response.status === 401) {
+      useAuthStore
+        .getState()
+        .signOut()
+        .catch(() => {});
+    }
     const text = await response.text().catch(() => '');
     throw new ApiError(text || response.statusText, response.status);
   }
