@@ -9,13 +9,21 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuthStore } from '../store/authStore';
 import { useEngagementStore } from '../store/engagementStore';
 import { ProfileApi, ClinicApi, SchemesApi } from '../services/api';
 import { cacheMemberProfile, getCachedMemberProfile } from '../services/cache';
-import { Clinic, MedicalAidScheme, MemberProfile } from '../types/api';
+import {
+  Clinic,
+  MedicalAidScheme,
+  MemberProfile,
+  ProfileUpdatePayload,
+} from '../types/api';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 function PickerSeparator() {
@@ -59,6 +67,15 @@ export function ProfileScreen() {
   const [savingScheme, setSavingScheme] = useState(false);
   const [currentSchemeId, setCurrentSchemeId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Edit profile
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [editFullName, setEditFullName] = useState('');
+  const [editDateOfBirth, setEditDateOfBirth] = useState('');
+  const [editGender, setEditGender] = useState('');
+  const [editMaritalStatus, setEditMaritalStatus] = useState('');
+  const [editAddress, setEditAddress] = useState('');
 
   const loadProfile = useCallback(async () => {
     const cached = await getCachedMemberProfile();
@@ -144,6 +161,49 @@ export function ProfileScreen() {
       Alert.alert('Error', 'Could not update your scheme. Try again.');
     } finally {
       setSavingScheme(false);
+    }
+  };
+
+  const openEditProfile = () => {
+    if (!profile) {
+      return;
+    }
+    setEditFullName(profile.full_name);
+    setEditDateOfBirth(profile.date_of_birth ?? '');
+    setEditGender(profile.gender ?? '');
+    setEditMaritalStatus(profile.marital_status ?? '');
+    setEditAddress(profile.address ?? '');
+    setShowEditProfile(true);
+  };
+
+  const saveProfile = async () => {
+    if (!memberId) {
+      return;
+    }
+    const trimmedName = editFullName.trim();
+    if (!trimmedName) {
+      Alert.alert('Name required', 'Full name cannot be empty.');
+      return;
+    }
+    const payload: ProfileUpdatePayload = {
+      full_name: trimmedName,
+      date_of_birth: editDateOfBirth.trim(),
+      gender: editGender,
+      marital_status: editMaritalStatus,
+      address: editAddress.trim(),
+    };
+    setSavingProfile(true);
+    try {
+      const updated = await ProfileApi.updateProfile(memberId, payload);
+      setProfile(updated);
+      await cacheMemberProfile(updated);
+      setShowEditProfile(false);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Could not update your profile.';
+      Alert.alert('Error', message);
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -251,6 +311,22 @@ export function ProfileScreen() {
           </View>
         ))}
       </View>
+
+      {/* Edit profile */}
+      <TouchableOpacity style={styles.settingRow} onPress={openEditProfile}>
+        <View style={styles.settingRowLeft}>
+          <Icon
+            name="account-edit-outline"
+            size={18}
+            color={colors.primaryTeal}
+          />
+          <View>
+            <Text style={styles.settingRowLabel}>Personal details</Text>
+            <Text style={styles.settingRowValue}>Edit your profile</Text>
+          </View>
+        </View>
+        <Icon name="chevron-right" size={18} color={colors.textTertiary} />
+      </TouchableOpacity>
 
       {/* Preferred clinic */}
       <TouchableOpacity
@@ -452,6 +528,143 @@ export function ProfileScreen() {
           />
         </View>
       </Modal>
+
+      {/* Edit profile modal */}
+      <Modal
+        visible={showEditProfile}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowEditProfile(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modal}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Edit profile</Text>
+            <TouchableOpacity
+              onPress={() => setShowEditProfile(false)}
+              style={styles.modalClose}
+              disabled={savingProfile}
+            >
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            contentContainerStyle={styles.editForm}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.fieldLabel}>Full name</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editFullName}
+              onChangeText={setEditFullName}
+              placeholder="Full name"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="words"
+            />
+
+            <Text style={styles.fieldLabel}>Date of birth</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editDateOfBirth}
+              onChangeText={setEditDateOfBirth}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+            />
+
+            <Text style={styles.fieldLabel}>Gender</Text>
+            <View style={styles.segmentRow}>
+              {[
+                { value: 'male', label: 'Male' },
+                { value: 'female', label: 'Female' },
+                { value: 'other', label: 'Other' },
+                { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+              ].map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.segmentChip,
+                    editGender === opt.value && styles.segmentChipSelected,
+                  ]}
+                  onPress={() =>
+                    setEditGender(editGender === opt.value ? '' : opt.value)
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.segmentChipText,
+                      editGender === opt.value &&
+                        styles.segmentChipTextSelected,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Marital status</Text>
+            <View style={styles.segmentRow}>
+              {[
+                { value: 'single', label: 'Single' },
+                { value: 'married', label: 'Married' },
+                { value: 'divorced', label: 'Divorced' },
+                { value: 'widowed', label: 'Widowed' },
+              ].map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.segmentChip,
+                    editMaritalStatus === opt.value &&
+                      styles.segmentChipSelected,
+                  ]}
+                  onPress={() =>
+                    setEditMaritalStatus(
+                      editMaritalStatus === opt.value ? '' : opt.value,
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.segmentChipText,
+                      editMaritalStatus === opt.value &&
+                        styles.segmentChipTextSelected,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.fieldLabel}>Address</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.fieldInputMultiline]}
+              value={editAddress}
+              onChangeText={setEditAddress}
+              placeholder="Street, city"
+              placeholderTextColor={colors.textTertiary}
+              multiline
+              numberOfLines={3}
+            />
+
+            <TouchableOpacity
+              style={[styles.saveBtn, savingProfile && styles.saveBtnDisabled]}
+              onPress={saveProfile}
+              disabled={savingProfile}
+            >
+              {savingProfile ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save changes</Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -649,5 +862,55 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
     marginTop: 2,
+  },
+
+  editForm: { padding: spacing.lg, gap: spacing.xs, paddingBottom: 40 },
+  fieldLabel: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  fieldInput: {
+    ...typography.body,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.toroBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  fieldInputMultiline: { minHeight: 72, textAlignVertical: 'top' as const },
+  segmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  segmentChip: {
+    borderWidth: 1,
+    borderColor: colors.toroBorder,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+  },
+  segmentChipSelected: {
+    backgroundColor: colors.primaryTealLight,
+    borderColor: colors.primaryTeal,
+  },
+  segmentChipText: { ...typography.bodySmall, color: colors.textSecondary },
+  segmentChipTextSelected: {
+    color: colors.primaryTeal,
+    fontWeight: '600' as const,
+  },
+  saveBtn: {
+    marginTop: spacing.xl,
+    backgroundColor: colors.primaryTeal,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  saveBtnDisabled: { opacity: 0.7 },
+  saveBtnText: {
+    ...typography.body,
+    color: colors.white,
+    fontWeight: '600' as const,
   },
 });

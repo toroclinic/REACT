@@ -28,6 +28,7 @@ import {
   TopUpStatusResponse,
   ClinicPaymentResponse,
   WalletTransaction,
+  ProfileUpdatePayload,
 } from '../types/api';
 
 const API_BASE_URL =
@@ -186,6 +187,12 @@ export const PricingApi = {
 export const ProfileApi = {
   getProfile: (memberId: string) =>
     request<MemberProfile>(`/member/${memberId}/profile`),
+
+  updateProfile: (memberId: string, payload: ProfileUpdatePayload) =>
+    request<MemberProfile>(`/member/${memberId}/profile`, {
+      method: 'PATCH',
+      body: payload,
+    }),
 
   updateClinic: (memberId: string, clinicId: string | null) =>
     request<{ ok: boolean }>(`/member/${memberId}/clinic`, {

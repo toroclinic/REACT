@@ -84,9 +84,19 @@ export interface MemberProfile {
   date_of_birth?: string | null;
   gender?: string;
   national_id?: string | null;
+  marital_status?: string;
   address?: string | null;
   annual_premium_bwp?: number;
   scheme_id?: string | null;
+}
+
+export interface ProfileUpdatePayload {
+  full_name?: string;
+  date_of_birth?: string;
+  gender?: string;
+  marital_status?: string;
+  address?: string;
+  preferred_language?: 'en' | 'tn';
 }
 
 export interface Clinic {
