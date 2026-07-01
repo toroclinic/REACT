@@ -2,6 +2,12 @@ node_modules/
 .gradle/
 build/
 *.keystore
+# Exception: the debug keystore is Android tooling's well-known, non-secret
+# default debug-signing key (storePassword/keyAlias/keyPassword are all
+# literally "android"/"androiddebugkey"/"android" — see android/app/build.gradle).
+# It must be identical and committed for every developer and CI runner, or
+# `:app:validateSigningDebug` fails with "Keystore file ... not found".
+!android/app/debug.keystore
 keystore.properties
 .env
 ios/Pods/
