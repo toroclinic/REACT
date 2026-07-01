@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -61,6 +61,9 @@ jobs:
           # versionCode = run number, guarantees a strictly increasing
           # integer across releases without hand-maintaining one in git.
           echo "versionCode=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure gradlew is executable
+        run: chmod +x android/gradlew
 
       - name: Build signed AAB
         working-directory: android

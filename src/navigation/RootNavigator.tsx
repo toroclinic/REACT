@@ -1,7 +1,11 @@
 import React from 'react';
 import { TouchableOpacity, StyleSheet } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import {
+  createBottomTabNavigator,
+  BottomTabBarButtonProps,
+  BottomTabNavigationProp,
+} from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { RootTabParamList } from './types';
@@ -53,12 +57,13 @@ function ToroLogo() {
   );
 }
 
-// Header logo button — navigates to Home on press.
-function HeaderLogo({
-  navigation,
-}: {
-  navigation: BottomTabNavigationProp<RootTabParamList>;
-}) {
+// Header logo button — navigates to Home on press. Reads navigation via the
+// hook rather than a prop threaded through screenOptions' per-render
+// closure, so this stays a single stable component reference across
+// RootNavigator re-renders instead of being redefined (and remounted) every
+// time — see the module-scope note below `renderTabBarIcon`.
+function HeaderLogo() {
+  const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   return (
     <TouchableOpacity
       onPress={() => navigation.navigate('Home')}
@@ -83,6 +88,32 @@ const TAB_ICONS: Record<keyof RootTabParamList, string> = {
   Profile: 'account-outline',
 };
 
+// Built once at module load — a plain arrow function assigned inside
+// `screenOptions` (which itself is re-invoked by React Navigation on every
+// focus/navigation-state change, not just on RootNavigator re-render) would
+// get a brand-new reference every time even if it just delegates to a
+// hoisted helper. Only a reference to something built OUTSIDE the render
+// path is truly stable, so each tab's icon renderer is created exactly once
+// here and looked up by route name — no inline function literal ever
+// appears in the render body.
+const TAB_ICON_RENDERERS = Object.fromEntries(
+  (Object.keys(TAB_ICONS) as (keyof RootTabParamList)[]).map(name => [
+    name,
+    ({ color }: { color: string }) => (
+      <Icon name={TAB_ICONS[name]} color={color} size={26} />
+    ),
+  ]),
+) as Record<
+  keyof RootTabParamList,
+  (props: { color: string }) => React.ReactElement
+>;
+
+// Same reasoning as renderTabBarIcon — must be a stable reference, not an
+// inline arrow function inside a Tab.Screen's `options` object.
+function ProfileTabButton(props: BottomTabBarButtonProps) {
+  return <TouchableOpacity activeOpacity={0.7} {...props} />;
+}
+
 const styles = StyleSheet.create({
   headerLogoBtn: { marginLeft: 12 },
 });
@@ -90,7 +121,7 @@ const styles = StyleSheet.create({
 export function RootNavigator() {
   return (
     <Tab.Navigator
-      screenOptions={({ route, navigation }) => ({
+      screenOptions={({ route }) => ({
         headerShown: true,
         headerStyle: {
           backgroundColor: colors.toroInk,
@@ -103,7 +134,7 @@ export function RootNavigator() {
           fontWeight: '600',
         },
         headerTintColor: colors.textPrimary,
-        headerLeft: () => <HeaderLogo navigation={navigation} />,
+        headerLeft: HeaderLogo,
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: 'rgba(212,168,67,0.5)',
         tabBarStyle: {
@@ -114,13 +145,7 @@ export function RootNavigator() {
         },
         tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
         tabBarItemStyle: { paddingHorizontal: 0 },
-        tabBarIcon: ({ color }) => (
-          <Icon
-            name={TAB_ICONS[route.name as keyof RootTabParamList]}
-            color={color}
-            size={26}
-          />
-        ),
+        tabBarIcon: TAB_ICON_RENDERERS[route.name as keyof RootTabParamList],
       })}
     >
       <Tab.Screen
@@ -163,9 +188,7 @@ export function RootNavigator() {
         component={ProfileScreen}
         options={{
           headerTitle: 'Profile',
-          tabBarButton: props => (
-            <TouchableOpacity activeOpacity={0.7} {...props} />
-          ),
+          tabBarButton: ProfileTabButton,
         }}
       />
     </Tab.Navigator>
