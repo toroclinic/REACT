@@ -26,7 +26,12 @@ export interface QueuedEvent {
 function generateLocalId(): string {
   // RFC4122-ish v4, good enough for an idempotency key — replace with
   // `react-native-uuid` if stricter collision guarantees are needed.
-  return 'evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+  return (
+    'evt_' +
+    Date.now().toString(36) +
+    '_' +
+    Math.random().toString(36).slice(2, 10)
+  );
 }
 
 async function readQueue(): Promise<QueuedEvent[]> {
@@ -62,35 +67,56 @@ export async function enqueueEngagementEvent(
   return queued;
 }
 
+const MAX_ATTEMPTS = 5;
+const BASE_BACKOFF_MS = 30_000; // 30s, doubles each retry: 30s, 60s, 120s, 240s, 480s
+
 let flushInFlight = false;
 
 // Drains the queue against the live API. Safe to call repeatedly (e.g. on
 // every NetInfo "back online" event) — re-entrant calls are no-ops while a
 // flush is already running.
 export async function flushQueue(): Promise<void> {
-  if (flushInFlight) return;
+  if (flushInFlight) {
+    return;
+  }
   const net = await NetInfo.fetch();
-  if (!net.isConnected) return;
+  if (!net.isConnected) {
+    return;
+  }
 
   flushInFlight = true;
   try {
-    let queue = await readQueue();
+    const queue = await readQueue();
     const remaining: QueuedEvent[] = [];
+    const now = Date.now();
 
     for (const item of queue) {
+      if (item.attempts >= MAX_ATTEMPTS) {
+        // Dead-letter: discard permanently after max retries to unblock the queue.
+        // The event was already applied optimistically to the UI, so no user action needed.
+        console.warn(
+          '[offlineQueue] dead-lettering event after max attempts',
+          item.localId,
+        );
+        continue;
+      }
+
+      // Exponential backoff — skip if we're still within the cooldown window.
+      const backoffMs = BASE_BACKOFF_MS * Math.pow(2, item.attempts);
+      const readyAt = new Date(item.enqueuedAt).getTime() + backoffMs;
+      if (now < readyAt) {
+        remaining.push(item);
+        continue;
+      }
+
       try {
-        // The localId travels as raw_value's sibling via the timestamp +
-        // member/event_type combination the backend already uses to
-        // dedupe; if the backend contract adds an explicit idempotency
-        // header, wire localId there instead of relying on payload shape.
         await PricingApi.submitEvent(item.event);
       } catch {
         remaining.push({ ...item, attempts: item.attempts + 1 });
       }
     }
 
-    queue = remaining;
-    await writeQueue(queue);
+    await writeQueue(remaining);
   } finally {
     flushInFlight = false;
   }
@@ -104,7 +130,7 @@ export async function getPendingCount(): Promise<number> {
 // Wire this once at app startup (see App.tsx) so reconnect events trigger
 // an automatic flush without any screen needing to know about NetInfo.
 export function startQueueAutoFlush(): () => void {
-  const unsubscribe = NetInfo.addEventListener((state) => {
+  const unsubscribe = NetInfo.addEventListener(state => {
     if (state.isConnected) {
       void flushQueue();
     }

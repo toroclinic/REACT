@@ -2,22 +2,36 @@
 // Backend Spec, Section 2). "Pula" means both rain and currency in
 // Setswana; the falling-rain motif behind the credit number is a deliberate
 // nod to the product's core mechanic, not decoration.
+//
+// Mirrors PWA .pula-card: gradient #0A5C58 → #0D7A74 → #0F8C84, radius-lg,
+// and native elevation replacing CSS box-shadow.
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, radius, spacing, elevation } from '../theme/tokens';
 import { Tier } from '../types/api';
 
 interface PulaCardProps {
   creditPct: number;
   tier: Tier;
   score: number;
+  annualPremiumBwp?: number | null;
 }
 
-export function PulaCard({ creditPct, tier, score }: PulaCardProps) {
+export function PulaCard({
+  creditPct,
+  tier,
+  score,
+  annualPremiumBwp,
+}: PulaCardProps) {
+  const savingBwp = annualPremiumBwp
+    ? Math.round((annualPremiumBwp * creditPct) / 100)
+    : null;
+
   return (
     <View style={styles.card}>
+      {/* Pula rain motif — same SVG path as the PWA */}
       <Svg
         width="100%"
         height={64}
@@ -39,11 +53,16 @@ export function PulaCard({ creditPct, tier, score }: PulaCardProps) {
         <Text style={styles.creditValue}>{creditPct}%</Text>
         <Text style={styles.creditSuffix}>off at renewal</Text>
       </View>
+      {savingBwp !== null && savingBwp > 0 && (
+        <Text style={styles.saving}>
+          You save P{savingBwp.toLocaleString()} this year
+        </Text>
+      )}
 
       <View style={styles.tierRow}>
         <View style={styles.dot} />
         <Text style={styles.tierText}>
-          {tier} tier &middot; score {score}
+          {tier} tier · score {score}
         </Text>
       </View>
     </View>
@@ -51,52 +70,69 @@ export function PulaCard({ creditPct, tier, score }: PulaCardProps) {
 }
 
 const styles = StyleSheet.create({
+  // Gradient approximated as mid-point flat colour (#0D7A74) — native gradient
+  // requires react-native-linear-gradient; flat colour preserves the dark-teal
+  // identity without adding a dependency.
   card: {
-    backgroundColor: colors.pulaCardBg,
+    backgroundColor: '#0D7A74',
     borderRadius: radius.lg,
-    padding: spacing.lg + 2,
+    padding: 20,
     overflow: 'hidden',
-    position: 'relative',
+    ...elevation.cardHigh,
   },
   rainSvg: {
     position: 'absolute',
     top: 0,
     left: 0,
-    opacity: 0.35,
+    opacity: 0.22,
   },
   label: {
-    ...typography.bodySmall,
-    color: colors.secondaryTeal,
-    marginBottom: spacing.xs + 2,
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.75)',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   creditRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: spacing.xs + 2,
+    gap: 6,
   },
+  // Credit value matches PWA .pula-card-credit-value: 42px 800
   creditValue: {
-    fontSize: 36,
-    fontWeight: '500',
-    color: colors.lightTealSurface,
+    fontSize: 42,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -2,
+    lineHeight: 44,
   },
   creditSuffix: {
-    ...typography.bodySmall,
-    color: colors.secondaryTeal,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+  },
+  saving: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '600',
+    marginTop: spacing.xs,
   },
   tierRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs + 2,
+    gap: 6,
     marginTop: spacing.sm + 2,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.secondaryTeal,
+    backgroundColor: colors.gold,
   },
   tierText: {
-    ...typography.caption,
-    color: colors.secondaryTeal,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
   },
 });

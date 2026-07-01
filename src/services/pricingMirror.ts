@@ -26,26 +26,38 @@ export interface TierInfo {
 }
 
 export function tierFor(score: number): TierInfo {
-  if (score >= 75) return { name: 'Gold', creditPct: 10 };
-  if (score >= 50) return { name: 'Silver', creditPct: 6 };
-  if (score >= 25) return { name: 'Bronze', creditPct: 3 };
+  if (score >= 75) {
+    return { name: 'Gold', creditPct: 10 };
+  }
+  if (score >= 50) {
+    return { name: 'Silver', creditPct: 6 };
+  }
+  if (score >= 25) {
+    return { name: 'Bronze', creditPct: 3 };
+  }
   return { name: 'Starting', creditPct: 0 };
 }
 
-export function estimateScore(profile: Pick<
-  CachedEngagementProfile,
-  | 'bp_screening_status'
-  | 'glucose_screening_status'
-  | 'activity_checkins_this_cycle'
-  | 'medication_confirmed_this_month'
-  | 'chronic_member'
->): number {
+export function estimateScore(
+  profile: Pick<
+    CachedEngagementProfile,
+    | 'bp_screening_status'
+    | 'glucose_screening_status'
+    | 'activity_checkins_this_cycle'
+    | 'medication_confirmed_this_month'
+    | 'chronic_member'
+  >,
+): number {
   let score = 0;
   // Pending-confirmation counts toward the task-list display (so the member
   // sees the task as in-progress, not missing) but the backend is the only
   // source of truth for whether it has actually been confirmed and credited.
-  if (profile.bp_screening_status !== 'not_logged') score += 25;
-  if (profile.glucose_screening_status !== 'not_logged') score += 25;
+  if (profile.bp_screening_status !== 'not_logged') {
+    score += 25;
+  }
+  if (profile.glucose_screening_status !== 'not_logged') {
+    score += 25;
+  }
   score += Math.min(profile.activity_checkins_this_cycle, 4) * 8.75;
   if (profile.chronic_member && profile.medication_confirmed_this_month) {
     score += 15;

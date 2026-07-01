@@ -1,0 +1,94 @@
+name: Android Release
+
+# Triggered by pushing a version tag, e.g.:
+#   git tag v1.2.0 && git push origin v1.2.0
+# Builds a signed release AAB and uploads it to the Play Console internal
+# testing track as a draft. Promotion to closed testing / production is a
+# manual step in Play Console after smoke-testing the internal build.
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Decode release keystore
+        working-directory: android
+        run: echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > app/wellnessplus-release.keystore
+
+      - name: Write keystore.properties
+        working-directory: android
+        run: |
+          cat > keystore.properties <<EOF
+          storeFile=app/wellnessplus-release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Derive version code from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "versionName=$TAG" >> "$GITHUB_OUTPUT"
+          # versionCode = run number, guarantees a strictly increasing
+          # integer across releases without hand-maintaining one in git.
+          echo "versionCode=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed AAB
+        working-directory: android
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.versionName }}
+          VERSION_CODE: ${{ steps.version.outputs.versionCode }}
+        run: |
+          ./gradlew bundleRelease --no-daemon \
+            -PVERSION_NAME="$VERSION_NAME" \
+            -PVERSION_CODE="$VERSION_CODE"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ steps.version.outputs.versionName }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90
+
+      - name: Upload to Play Console (internal track, draft)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.wellnessplus
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: draft
+
+      - name: Clean up keystore
+        if: always()
+        working-directory: android
+        run: rm -f app/wellnessplus-release.keystore keystore.properties

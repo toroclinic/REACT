@@ -1,15 +1,4 @@
 rootProject.name = 'WellnessPlus'
-
-pluginManagement { includeBuild('../node_modules/@react-native/gradle-plugin') }
-plugins { id("com.facebook.react.settings") }
-
-extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
-    ex.autolinkLibrariesFromCommand()
-}
-
+apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
 include ':app'
-
-// react-native-vector-icons is autolinked via the command above on RN
-// 0.74+ (no manual settings.gradle entry needed, unlike older RN
-// versions) — see app/build.gradle's project.ext.vectoricons block for
-// the one manual step this package still requires: font asset copying.
+includeBuild('../node_modules/@react-native/gradle-plugin')

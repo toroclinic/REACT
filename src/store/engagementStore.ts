@@ -1,8 +1,3 @@
-// Global engagement state — score, tier, credit, and the cached profile
-// the Home screen task list is computed from. Per spec Section 3.1, this
-// is intentionally one of the only pieces of truly global state, since the
-// bottom tab bar and Home both depend on it staying in sync.
-
 import { create } from 'zustand';
 import { CachedEngagementProfile, EventType, Tier } from '../types/api';
 import { PricingApi } from './../services/api';
@@ -20,7 +15,15 @@ interface EngagementState {
 
   loadFromCache: () => Promise<void>;
   refreshFromServer: (memberId: string) => Promise<void>;
-  logEvent: (memberId: string, eventType: EventType, chronicMember: boolean, rawValue?: string) => Promise<void>;
+  logEvent: (
+    memberId: string,
+    eventType: EventType,
+    chronicMember: boolean,
+    rawValue?: string,
+  ) => Promise<void>;
+  applyOptimisticUpdate: (
+    patch: Partial<CachedEngagementProfile>,
+  ) => Promise<void>;
 }
 
 const FALLBACK_PROFILE: CachedEngagementProfile = {
@@ -55,37 +58,56 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
         score: credit.score,
         tier: credit.tier,
         credit_pct: credit.credit_pct,
+        bp_screening_status: credit.bp_screening_done
+          ? 'confirmed'
+          : current.bp_screening_status,
+        glucose_screening_status: credit.glucose_screening_done
+          ? 'confirmed'
+          : current.glucose_screening_status,
+        scheme_id: credit.scheme_id,
+        scheme_name: credit.scheme_name,
+        scheme_color: credit.scheme_color,
+        breakdown: credit.breakdown,
+        next_tier: credit.next_tier,
+        points_to_next_tier: credit.points_to_next_tier,
         last_synced_at: new Date().toISOString(),
       };
       await cacheEngagementProfile(updated);
-      set({ profile: updated, isOffline: false });
+      // Single set() = single reconciliation pass across all subscribers
+      set({ profile: updated, isOffline: false, isLoading: false });
     } catch {
-      // Offline or backend unavailable — fall back to cache silently,
-      // per Section 3.5. The screen shows "last updated" rather than erroring.
       const cached = await getCachedEngagementProfile();
-      set({ profile: cached ?? get().profile ?? FALLBACK_PROFILE, isOffline: true });
-    } finally {
-      set({ isLoading: false });
+      set({
+        profile: cached ?? get().profile ?? FALLBACK_PROFILE,
+        isOffline: true,
+        isLoading: false,
+      });
     }
   },
 
-  // Optimistic local update + background sync, per Section 3.4: the UI
-  // reflects the action immediately; the queue (services/offlineQueue.ts)
-  // handles eventual consistency with the backend, including the
-  // pending-confirmation badge for self-reported screenings.
   logEvent: async (memberId, eventType, chronicMember, rawValue?) => {
-    const current = get().profile ?? { ...FALLBACK_PROFILE, chronic_member: chronicMember };
+    const current = get().profile ?? {
+      ...FALLBACK_PROFILE,
+      chronic_member: chronicMember,
+    };
     const next: CachedEngagementProfile = { ...current };
 
-    if (eventType === 'bp_screening') next.bp_screening_status = 'pending_confirmation';
-    if (eventType === 'glucose_screening') next.glucose_screening_status = 'pending_confirmation';
-    if (eventType === 'activity_checkin') {
-      next.activity_checkins_this_cycle = Math.min(next.activity_checkins_this_cycle + 1, 4);
+    if (eventType === 'bp_screening') {
+      next.bp_screening_status = 'pending_confirmation';
     }
-    if (eventType === 'medication_confirm') next.medication_confirmed_this_month = true;
+    if (eventType === 'glucose_screening') {
+      next.glucose_screening_status = 'pending_confirmation';
+    }
+    if (eventType === 'activity_checkin') {
+      next.activity_checkins_this_cycle = Math.min(
+        next.activity_checkins_this_cycle + 1,
+        4,
+      );
+    }
+    if (eventType === 'medication_confirm') {
+      next.medication_confirmed_this_month = true;
+    }
 
-    // Client-side estimate only — see pricingMirror.ts header comment.
-    // Re-synced with the authoritative score on the next refreshFromServer.
     const estimatedScore = estimateScore(next);
     const tier = tierFor(estimatedScore);
     next.score = estimatedScore;
@@ -102,5 +124,16 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
       channel: 'app',
       ...(rawValue != null ? { raw_value: rawValue } : {}),
     });
+  },
+
+  applyOptimisticUpdate: async patch => {
+    const current = get().profile ?? FALLBACK_PROFILE;
+    const next: CachedEngagementProfile = {
+      ...current,
+      ...patch,
+      last_synced_at: new Date().toISOString(),
+    };
+    set({ profile: next });
+    await cacheEngagementProfile(next);
   },
 }));

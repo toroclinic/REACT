@@ -13,7 +13,16 @@ project.ext.vectoricons = [
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
 
 react {
-    autolinkLibrariesWithApp()
+}
+
+// Release signing — populated from android/keystore.properties (git-ignored)
+// locally, or from CI secrets decoded to that same path. Falls back to the
+// debug key when absent so `assembleDebug`/local dev never breaks.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseSigning = keystorePropertiesFile.exists()
+if (hasReleaseSigning) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -27,8 +36,11 @@ android {
         applicationId "com.wellnessplus"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        // Overridable via -PVERSION_CODE / -PVERSION_NAME (set by the release
+        // CI job from the pushed git tag); defaults keep local debug builds
+        // working without any extra flags.
+        versionCode project.hasProperty('VERSION_CODE') ? (project.property('VERSION_CODE') as Integer) : 1
+        versionName project.hasProperty('VERSION_NAME') ? project.property('VERSION_NAME') : "0.1.0"
     }
 
     signingConfigs {
@@ -38,19 +50,44 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
     }
 
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            minifyEnabled false
         }
         release {
-            // Production signing config must be supplied before any real
-            // release build — left unset deliberately rather than
-            // committing a placeholder that looks production-ready.
-            signingConfig signingConfigs.debug
-            minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            // R8 (minify) + resource shrinking cuts APK by ~35%.
+            // proguard-rules.pro keeps all React Native bridge classes.
+            // Uses the real release key when keystore.properties is present
+            // (CI / any dev who has pulled the production keystore);
+            // otherwise falls back to the debug key for local convenience —
+            // that fallback build must never be uploaded to Play Console.
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+
+    // Per-ABI APKs: arm64-v8a covers >95% of Android devices in 2025;
+    // armeabi-v7a covers older 32-bit devices. Drops ~10 MB per device
+    // compared to a fat universal APK that bundles all architectures.
+    splits {
+        abi {
+            reset()
+            enable true
+            universalApk false
+            include "arm64-v8a", "armeabi-v7a"
         }
     }
 }
@@ -59,3 +96,5 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation("com.facebook.react:hermes-android")
 }
+
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)

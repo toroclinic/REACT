@@ -5,15 +5,11 @@
 
 buildscript {
     ext {
-        buildToolsVersion = "34.0.0"
+        buildToolsVersion = "36.1.0"
         minSdkVersion = 26  // Health Connect requires API 26+
-        compileSdkVersion = 34
-        targetSdkVersion = 34
-        // Hermes is the default JS engine for RN 0.74 — matches the
-        // Podfile's :hermes_enabled => true on the iOS side, so JS
-        // behavior (including pricingMirror.ts's scoring math) is
-        // identical across platforms.
-        ndkVersion = "26.1.10909125"
+        compileSdkVersion = 36
+        targetSdkVersion = 35
+        ndkVersion = "27.0.12077973"
         kotlinVersion = "1.9.24"
     }
     repositories {

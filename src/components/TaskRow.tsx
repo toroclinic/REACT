@@ -1,13 +1,18 @@
-import React from 'react';
+﻿import React from 'react';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import {
+  colors,
+  radius,
+  spacing,
+  typography,
+  elevation,
+} from '../theme/tokens';
 import { TaskItem } from '../services/pricingMirror';
 
 // Maps the tabler-style icon names used in the design spec to an
 // equivalent MaterialCommunityIcons glyph, since Tabler's icon font isn't
-// bundled for React Native by default. Swap for a Tabler RN package if the
-// design team wants pixel-identical icons to the prototype.
+// bundled for React Native by default.
 const ICON_MAP: Record<string, string> = {
   'ti-heart-rate-monitor': 'heart-pulse',
   'ti-droplet-half-2': 'water-percent',
@@ -28,10 +33,14 @@ export function TaskRow({ task, onPress }: TaskRowProps) {
       accessibilityRole="button"
       accessibilityLabel={`${task.label}, ${task.points}`}
     >
-      <View style={styles.left}>
-        <Icon name={ICON_MAP[task.icon] ?? 'circle'} size={18} color={colors.primaryTeal} />
-        <Text style={styles.label}>{task.label}</Text>
+      <View style={styles.iconWrap}>
+        <Icon
+          name={ICON_MAP[task.icon] ?? 'circle'}
+          size={18}
+          color={colors.primaryTeal}
+        />
       </View>
+      <Text style={styles.label}>{task.label}</Text>
       <Text style={styles.points}>{task.points}</Text>
     </TouchableOpacity>
   );
@@ -41,25 +50,32 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg - 2,
+    paddingHorizontal: spacing.lg,
     backgroundColor: colors.surfaceNeutral,
-    borderRadius: radius.md,
-  },
-  left: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.toroBorder,
     gap: spacing.sm + 2,
-    flexShrink: 1,
+    ...elevation.card,
+  },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryTealLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   label: {
     ...typography.bodySmall,
     color: colors.textPrimary,
-    flexShrink: 1,
+    flex: 1,
   },
   points: {
     ...typography.caption,
     color: colors.textTertiary,
+    fontWeight: '600',
   },
 });

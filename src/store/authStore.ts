@@ -6,10 +6,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { AuthTokens } from '../types/api';
+import { clearMemoryCache } from '../services/cache';
 
 const ACCESS_TOKEN_KEY = '@wellness/auth/access_token';
 const REFRESH_TOKEN_KEY = '@wellness/auth/refresh_token';
 const MEMBER_ID_KEY = '@wellness/auth/member_id';
+
+// Module-level token cache — eliminates an AsyncStorage disk read on every
+// authenticated request. Undefined = cache not yet seeded (hydrate not run).
+let _cachedToken: string | null | undefined;
 
 interface AuthState {
   memberId: string | null;
@@ -19,17 +24,27 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>(set => ({
   memberId: null,
   isAuthenticated: false,
 
   hydrate: async () => {
-    const memberId = await AsyncStorage.getItem(MEMBER_ID_KEY);
-    const accessToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+    // Single multiGet round-trip instead of two sequential getItem calls.
+    // multiGet always returns one entry per requested key, in order, but
+    // TS's noUncheckedIndexedAccess can't express that guarantee — hence
+    // the non-null assertions rather than array destructuring.
+    const pairs = await AsyncStorage.multiGet([
+      MEMBER_ID_KEY,
+      ACCESS_TOKEN_KEY,
+    ]);
+    const memberId = pairs[0]![1];
+    const accessToken = pairs[1]![1];
+    _cachedToken = accessToken ?? null;
     set({ memberId, isAuthenticated: Boolean(memberId && accessToken) });
   },
 
-  setSession: async (tokens) => {
+  setSession: async tokens => {
+    _cachedToken = tokens.access_token;
     await AsyncStorage.multiSet([
       [ACCESS_TOKEN_KEY, tokens.access_token],
       [REFRESH_TOKEN_KEY, tokens.refresh_token],
@@ -39,13 +54,25 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: async () => {
-    await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, MEMBER_ID_KEY]);
+    _cachedToken = null;
+    clearMemoryCache();
+    await AsyncStorage.multiRemove([
+      ACCESS_TOKEN_KEY,
+      REFRESH_TOKEN_KEY,
+      MEMBER_ID_KEY,
+    ]);
     set({ memberId: null, isAuthenticated: false });
   },
 }));
 
-// Plain async accessor for the API client (services/api.ts), which sits
-// outside React and can't call the hook directly.
+// Plain accessor for the API client — returns the in-memory cached token
+// when available (zero disk I/O), falls back to AsyncStorage on first call
+// before hydrate() has run (e.g. deep-link cold start).
 export async function getAccessToken(): Promise<string | null> {
-  return AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+  if (_cachedToken !== undefined) {
+    return _cachedToken;
+  }
+  const token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+  _cachedToken = token;
+  return token;
 }
