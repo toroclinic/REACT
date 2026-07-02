@@ -12,6 +12,7 @@ import {
   FlatList,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { ScreeningTrends } from '../components/ScreeningTrends';
 import { useAuthStore } from '../store/authStore';
 import { useEngagementStore } from '../store/engagementStore';
 import { ClinicApi, PricingApi } from '../services/api';
@@ -31,7 +32,7 @@ type ScreeningKey =
   | 'bmi'
   | 'eye'
   | 'dental';
-type ScreenTab = 'tests' | 'history';
+type ScreenTab = 'tests' | 'trends' | 'history';
 
 interface ScreeningMeta {
   label: string;
@@ -335,7 +336,7 @@ export function ScreeningScreen() {
 
   const handleTabChange = (t: ScreenTab) => {
     setTab(t);
-    if (t === 'history') {
+    if (t === 'history' || t === 'trends') {
       void loadHistory();
     }
   };
@@ -769,6 +770,19 @@ export function ScreeningScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
+          style={[styles.tabBtn, tab === 'trends' && styles.tabBtnActive]}
+          onPress={() => handleTabChange('trends')}
+        >
+          <Text
+            style={[
+              styles.tabBtnText,
+              tab === 'trends' && styles.tabBtnTextActive,
+            ]}
+          >
+            Trends
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.tabBtn, tab === 'history' && styles.tabBtnActive]}
           onPress={() => handleTabChange('history')}
         >
@@ -982,6 +996,13 @@ export function ScreeningScreen() {
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={colors.primaryTeal} />
         </View>
+      ) : tab === 'trends' ? (
+        <ScrollView
+          style={styles.screen}
+          contentContainerStyle={styles.content}
+        >
+          <ScreeningTrends history={history} />
+        </ScrollView>
       ) : (
         <FlatList
           style={styles.historyFlatList}

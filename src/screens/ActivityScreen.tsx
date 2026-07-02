@@ -68,6 +68,34 @@ function groupByMonth(
     .reverse();
 }
 
+// Current streak: consecutive days with ≥1 check-in, ending today or
+// yesterday (so the streak survives until the member logs today).
+// Ported from the Web PWA, with its walk-start bug fixed: the walk begins
+// at yesterday when today has no entry yet, instead of always at today.
+function computeStreak(entries: ActivityHistoryEntry[]): number {
+  if (entries.length === 0) {
+    return 0;
+  }
+  const days = new Set(entries.filter(e => e.count > 0).map(e => e.date));
+  const cursor = new Date();
+  const todayKey = cursor.toLocaleDateString('en-CA');
+  if (!days.has(todayKey)) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!days.has(cursor.toLocaleDateString('en-CA'))) {
+      return 0;
+    }
+  }
+  let streak = 0;
+  for (let i = 0; i < 365; i++) {
+    if (!days.has(cursor.toLocaleDateString('en-CA'))) {
+      break;
+    }
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
 export function ActivityScreen() {
   const memberId = useAuthStore(s => s.memberId);
   const { profile, logEvent, refreshFromServer } = useEngagementStore();
@@ -109,6 +137,10 @@ export function ActivityScreen() {
 
   const historyGroups = useMemo(
     () => groupByMonth(activityHistory),
+    [activityHistory],
+  );
+  const streak = useMemo(
+    () => computeStreak(activityHistory),
     [activityHistory],
   );
 
@@ -256,6 +288,25 @@ export function ActivityScreen() {
             removeClippedSubviews
             initialNumToRender={6}
             maxToRenderPerBatch={4}
+            ListHeaderComponent={
+              activityHistory.length > 0 ? (
+                <View style={styles.streakCard}>
+                  <Text style={styles.streakEmoji}>
+                    {streak >= 7 ? '🔥' : streak >= 3 ? '⚡' : '🌱'}
+                  </Text>
+                  <View>
+                    <Text style={styles.streakValue}>
+                      {streak} day{streak !== 1 ? 's' : ''}
+                    </Text>
+                    <Text style={styles.streakLabel}>
+                      {streak > 0
+                        ? 'Current streak — keep it going!'
+                        : 'Log an activity today to start a streak'}
+                    </Text>
+                  </View>
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Text style={styles.emptyIcon}>🏃</Text>
@@ -523,6 +574,22 @@ const styles = StyleSheet.create({
   // History tab
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   historyFlatList: { flex: 1 },
+  streakCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surfaceNeutral,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  streakEmoji: { fontSize: 28 },
+  streakValue: {
+    ...typography.h2,
+    color: colors.textPrimary,
+    fontWeight: '700' as const,
+  },
+  streakLabel: { ...typography.caption, color: colors.textTertiary },
   historyList: {
     padding: spacing.lg,
     paddingBottom: spacing.xl * 2,
