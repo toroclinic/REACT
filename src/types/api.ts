@@ -44,6 +44,23 @@ export interface ScoreBreakdownItem {
   done: boolean;
 }
 
+// Numeric pricing parameters of the member's medical aid scheme — lets the
+// client-side pricing mirror estimate with the member's actual scheme
+// instead of Toro defaults. Served by GET /engagement/:id/credit.
+export interface SchemePricingConfig {
+  bp_points: number;
+  glucose_points: number;
+  activity_points: number;
+  max_activity_checkins: number;
+  chronic_bonus: number;
+  bronze_threshold: number;
+  silver_threshold: number;
+  gold_threshold: number;
+  bronze_credit_pct: number;
+  silver_credit_pct: number;
+  gold_credit_pct: number;
+}
+
 export interface CreditResponse {
   score: number;
   tier: Tier;
@@ -57,6 +74,7 @@ export interface CreditResponse {
   breakdown?: ScoreBreakdownItem[];
   next_tier?: Tier | null;
   points_to_next_tier?: number;
+  scheme_config?: SchemePricingConfig;
 }
 
 export interface OtpRequestPayload {
@@ -326,4 +344,5 @@ export interface CachedEngagementProfile {
   breakdown?: ScoreBreakdownItem[];
   next_tier?: Tier | null;
   points_to_next_tier?: number;
+  scheme_config?: SchemePricingConfig;
 }

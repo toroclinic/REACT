@@ -67,6 +67,7 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
         scheme_id: credit.scheme_id,
         scheme_name: credit.scheme_name,
         scheme_color: credit.scheme_color,
+        scheme_config: credit.scheme_config,
         breakdown: credit.breakdown,
         next_tier: credit.next_tier,
         points_to_next_tier: credit.points_to_next_tier,
@@ -101,7 +102,7 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
     if (eventType === 'activity_checkin') {
       next.activity_checkins_this_cycle = Math.min(
         next.activity_checkins_this_cycle + 1,
-        4,
+        next.scheme_config?.max_activity_checkins ?? 4,
       );
     }
     if (eventType === 'medication_confirm') {
@@ -109,7 +110,7 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
     }
 
     const estimatedScore = estimateScore(next);
-    const tier = tierFor(estimatedScore);
+    const tier = tierFor(estimatedScore, next.scheme_config);
     next.score = estimatedScore;
     next.tier = tier.name as Tier;
     next.credit_pct = tier.creditPct;

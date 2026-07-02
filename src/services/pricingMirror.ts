@@ -11,29 +11,48 @@
 // This function is a presentation-layer convenience for "what should the
 // member do next" — never used to compute or display the credit itself.
 //
-// score = min(100,
-//   (bp_screening_done ? 25 : 0) +
-//   (glucose_screening_done ? 25 : 0) +
-//   (min(activity_checkins, 4) * 8.75) +
-//   (chronic_member AND medication_confirmed_this_month ? 15 : 0)
-// )
+// Scheme-aware (2026-07-02): the backend is scheme-aware ("v2-scheme-aware"
+// calculation version) — each medical aid partner has its own point values,
+// thresholds and credit percentages. The member's scheme config is cached on
+// the engagement profile (profile.scheme_config, served by /credit); when
+// absent (older cache, first launch) the Toro defaults below apply.
 
-import { CachedEngagementProfile, Tier } from '../types/api';
+import {
+  CachedEngagementProfile,
+  SchemePricingConfig,
+  Tier,
+} from '../types/api';
 
 export interface TierInfo {
   name: Tier;
   creditPct: number;
 }
 
-export function tierFor(score: number): TierInfo {
-  if (score >= 75) {
-    return { name: 'Gold', creditPct: 10 };
+// Mirrors DEFAULT_SCHEME in the backend's pricingModule.ts.
+export const TORO_DEFAULT_SCHEME: SchemePricingConfig = {
+  bp_points: 25,
+  glucose_points: 25,
+  activity_points: 8.75,
+  max_activity_checkins: 4,
+  chronic_bonus: 15,
+  bronze_threshold: 25,
+  silver_threshold: 50,
+  gold_threshold: 75,
+  bronze_credit_pct: 3,
+  silver_credit_pct: 6,
+  gold_credit_pct: 10,
+};
+
+export function tierFor(score: number, scheme?: SchemePricingConfig): TierInfo {
+  const s = scheme ?? TORO_DEFAULT_SCHEME;
+  if (score >= s.gold_threshold) {
+    return { name: 'Gold', creditPct: s.gold_credit_pct };
   }
-  if (score >= 50) {
-    return { name: 'Silver', creditPct: 6 };
+  if (score >= s.silver_threshold) {
+    return { name: 'Silver', creditPct: s.silver_credit_pct };
   }
-  if (score >= 25) {
-    return { name: 'Bronze', creditPct: 3 };
+  if (score >= s.bronze_threshold) {
+    return { name: 'Bronze', creditPct: s.bronze_credit_pct };
   }
   return { name: 'Starting', creditPct: 0 };
 }
@@ -46,21 +65,25 @@ export function estimateScore(
     | 'activity_checkins_this_cycle'
     | 'medication_confirmed_this_month'
     | 'chronic_member'
+    | 'scheme_config'
   >,
 ): number {
+  const s = profile.scheme_config ?? TORO_DEFAULT_SCHEME;
   let score = 0;
   // Pending-confirmation counts toward the task-list display (so the member
   // sees the task as in-progress, not missing) but the backend is the only
   // source of truth for whether it has actually been confirmed and credited.
   if (profile.bp_screening_status !== 'not_logged') {
-    score += 25;
+    score += s.bp_points;
   }
   if (profile.glucose_screening_status !== 'not_logged') {
-    score += 25;
+    score += s.glucose_points;
   }
-  score += Math.min(profile.activity_checkins_this_cycle, 4) * 8.75;
+  score +=
+    Math.min(profile.activity_checkins_this_cycle, s.max_activity_checkins) *
+    s.activity_points;
   if (profile.chronic_member && profile.medication_confirmed_this_month) {
-    score += 15;
+    score += s.chronic_bonus;
   }
   return Math.min(Math.round(score), 100);
 }
@@ -73,9 +96,15 @@ export interface TaskItem {
   target: 'Screening' | 'Activity';
 }
 
+// Points can be fractional (e.g. 8.75) — trim trailing zeros for display.
+function fmtPts(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
+
 // Drives the dynamic task list on Home. Order matters: screenings first
 // (highest point value, builds trust fastest), then activity.
 export function computeTasks(profile: CachedEngagementProfile): TaskItem[] {
+  const s = profile.scheme_config ?? TORO_DEFAULT_SCHEME;
   const tasks: TaskItem[] = [];
 
   if (profile.bp_screening_status === 'not_logged') {
@@ -83,7 +112,7 @@ export function computeTasks(profile: CachedEngagementProfile): TaskItem[] {
       id: 'bp',
       icon: 'ti-heart-rate-monitor',
       label: 'Complete a blood pressure screening',
-      points: '+25 pts',
+      points: `+${fmtPts(s.bp_points)} pts`,
       target: 'Screening',
     });
   }
@@ -92,16 +121,16 @@ export function computeTasks(profile: CachedEngagementProfile): TaskItem[] {
       id: 'glucose',
       icon: 'ti-droplet-half-2',
       label: 'Complete a glucose screening',
-      points: '+25 pts',
+      points: `+${fmtPts(s.glucose_points)} pts`,
       target: 'Screening',
     });
   }
-  if (profile.activity_checkins_this_cycle < 4) {
+  if (profile.activity_checkins_this_cycle < s.max_activity_checkins) {
     tasks.push({
       id: 'activity',
       icon: 'ti-walk',
-      label: `Log activity (${profile.activity_checkins_this_cycle}/4 this cycle)`,
-      points: '+8.75 pts each',
+      label: `Log activity (${profile.activity_checkins_this_cycle}/${s.max_activity_checkins} this cycle)`,
+      points: `+${fmtPts(s.activity_points)} pts each`,
       target: 'Activity',
     });
   }
@@ -110,7 +139,7 @@ export function computeTasks(profile: CachedEngagementProfile): TaskItem[] {
       id: 'medication',
       icon: 'ti-pill',
       label: 'Confirm medication adherence this month',
-      points: '+15 pts',
+      points: `+${fmtPts(s.chronic_bonus)} pts`,
       target: 'Activity',
     });
   }
