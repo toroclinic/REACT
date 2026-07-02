@@ -879,7 +879,9 @@ export function ScreeningScreen() {
                           styles.submitBtn,
                           (!ready || isSubmitting) && styles.submitBtnDisabled,
                         ]}
-                        onPress={() => void logResult(key)}
+                        onPress={() => {
+                          void logResult(key);
+                        }}
                         disabled={!ready || isSubmitting}
                         accessibilityRole="button"
                         accessibilityLabel={
@@ -910,7 +912,9 @@ export function ScreeningScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.clinicBtn}
-                        onPress={() => void findClinics()}
+                        onPress={() => {
+                          void findClinics();
+                        }}
                         disabled={loadingClinics}
                         accessibilityRole="button"
                         accessibilityLabel="Find a partner clinic nearby"

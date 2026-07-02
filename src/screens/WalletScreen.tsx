@@ -712,7 +712,7 @@ export function WalletScreen() {
                           />
                         )}
                       </View>
-                      <View style={{ flex: 1 }}>
+                      <View style={styles.clinicInfo}>
                         <Text style={styles.clinicName}>{c.name}</Text>
                         {!!c.address && (
                           <Text style={styles.clinicAddr} numberOfLines={1}>
@@ -749,7 +749,7 @@ export function WalletScreen() {
                 name="lock-outline"
                 size={12}
                 color={colors.textTertiary}
-                style={{ marginTop: 1 }}
+                style={styles.restrictionIcon}
               />
               <Text style={styles.restrictionNoticeText}>
                 Health-restricted: funds can only be used at Toro-verified
@@ -1109,6 +1109,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   clinicCheckSelected: { borderColor: colors.primaryTeal },
+  clinicInfo: { flex: 1 },
   clinicName: { ...typography.bodySmall, color: colors.textPrimary },
   clinicAddr: {
     ...typography.caption,
@@ -1126,6 +1127,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginBottom: spacing.sm,
   },
+  restrictionIcon: { marginTop: 1 },
   restrictionNoticeText: {
     ...typography.caption,
     color: colors.textTertiary,

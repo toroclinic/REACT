@@ -201,8 +201,8 @@ async function syncAndroid(memberId: string): Promise<number> {
     const day: string = ((rec as any).time as string).slice(0, 10);
     const pct: number =
       (rec as any).percentage?.value ?? (rec as any).percentage ?? 0;
-    const existing = spo2ByDay.get(day);
-    if (!existing || pct < existing.pct) {
+    const lowest = spo2ByDay.get(day);
+    if (!lowest || pct < lowest.pct) {
       spo2ByDay.set(day, { id, pct, time: (rec as any).time });
     }
   }

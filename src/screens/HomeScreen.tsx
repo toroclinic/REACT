@@ -149,35 +149,38 @@ export function HomeScreen({ navigation }: Props) {
     return (
       <View style={styles.skeleton}>
         <Animated.View
-          style={[styles.skeletonBlock, { height: 140, opacity: skeletonAnim }]}
-        />
-        <Animated.View
           style={[
             styles.skeletonBlock,
-            {
-              height: 20,
-              width: 160,
-              marginTop: spacing.lg,
-              opacity: skeletonAnim,
-            },
+            styles.skeletonHero,
+            { opacity: skeletonAnim },
           ]}
         />
         <Animated.View
           style={[
             styles.skeletonBlock,
-            { height: 100, marginTop: spacing.md, opacity: skeletonAnim },
+            styles.skeletonTitle,
+            { opacity: skeletonAnim },
           ]}
         />
         <Animated.View
           style={[
             styles.skeletonBlock,
-            { height: 56, marginTop: spacing.md, opacity: skeletonAnim },
+            styles.skeletonCard,
+            { opacity: skeletonAnim },
           ]}
         />
         <Animated.View
           style={[
             styles.skeletonBlock,
-            { height: 56, marginTop: spacing.sm, opacity: skeletonAnim },
+            styles.skeletonRowFirst,
+            { opacity: skeletonAnim },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.skeletonBlock,
+            styles.skeletonRow,
+            { opacity: skeletonAnim },
           ]}
         />
       </View>
@@ -191,7 +194,11 @@ export function HomeScreen({ navigation }: Props) {
       refreshControl={
         <RefreshControl
           refreshing={isLoading}
-          onRefresh={() => memberId && void refreshFromServer(memberId)}
+          onRefresh={() => {
+            if (memberId) {
+              void refreshFromServer(memberId);
+            }
+          }}
           tintColor={colors.heroTeal}
         />
       }
@@ -516,6 +523,11 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 0,
   },
+  skeletonHero: { height: 140 },
+  skeletonTitle: { height: 20, width: 160, marginTop: spacing.lg },
+  skeletonCard: { height: 100, marginTop: spacing.md },
+  skeletonRowFirst: { height: 56, marginTop: spacing.md },
+  skeletonRow: { height: 56, marginTop: spacing.sm },
 
   // Hero band — matches PWA .home-hero-band: primaryTeal bg, 18px h-padding
   heroBand: {

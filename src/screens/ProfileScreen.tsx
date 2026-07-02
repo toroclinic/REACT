@@ -123,7 +123,13 @@ export function ProfileScreen() {
   const handleSignOut = () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: () => {
+          void signOut();
+        },
+      },
     ]);
   };
 
@@ -219,7 +225,9 @@ export function ProfileScreen() {
           <Text style={styles.errorText}>{fetchError}</Text>
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={() => void loadProfile()}
+            onPress={() => {
+              void loadProfile();
+            }}
           >
             <Text style={styles.retryText}>Try again</Text>
           </TouchableOpacity>
@@ -458,7 +466,7 @@ export function ProfileScreen() {
               </TouchableOpacity>
             )}
             ItemSeparatorComponent={PickerSeparator}
-            contentContainerStyle={{ paddingBottom: 40 }}
+            contentContainerStyle={styles.pickerListContent}
           />
         </View>
       </Modal>
@@ -524,7 +532,7 @@ export function ProfileScreen() {
               </TouchableOpacity>
             )}
             ItemSeparatorComponent={PickerSeparator}
-            contentContainerStyle={{ paddingBottom: 40 }}
+            contentContainerStyle={styles.pickerListContent}
           />
         </View>
       </Modal>
@@ -913,4 +921,5 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '600' as const,
   },
+  pickerListContent: { paddingBottom: 40 },
 });

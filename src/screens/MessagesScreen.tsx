@@ -263,7 +263,9 @@ export function MessagesScreen() {
         <Text style={styles.reminderBody}>{item.message}</Text>
         <TouchableOpacity
           style={[styles.dismissBtn, isDismissing && styles.dismissBtnDisabled]}
-          onPress={() => void handleDismiss(item.reminder_id)}
+          onPress={() => {
+            void handleDismiss(item.reminder_id);
+          }}
           disabled={isDismissing || !!dismissing}
           accessibilityRole="button"
           accessibilityLabel="Dismiss this reminder"
@@ -368,7 +370,9 @@ export function MessagesScreen() {
           refreshControl={
             <RefreshControl
               refreshing={false}
-              onRefresh={() => void loadReminders()}
+              onRefresh={() => {
+                void loadReminders();
+              }}
               tintColor={colors.primaryTeal}
             />
           }
