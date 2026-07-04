@@ -110,6 +110,10 @@ export interface RegisterPayload {
   policy_number: string;
   renewal_date: string;
   preferred_language?: 'en' | 'tn';
+  // Stage 2 — consent (terms is required by the backend at registration)
+  consent_terms?: boolean;
+  consent_scheme_sharing?: boolean;
+  consent_channel?: 'app' | 'pwa' | 'ussd' | 'admin';
 }
 
 export const AuthApi = {

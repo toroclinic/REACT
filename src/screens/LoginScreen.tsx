@@ -67,6 +67,10 @@ export function LoginScreen() {
   const [regPolicy, setRegPolicy] = useState('');
   const [regRenewal, setRegRenewal] = useState('');
   const [regLang, setRegLang] = useState<'en' | 'tn'>('en');
+  // Stage 2 — consent. Terms is required by the backend; scheme-sharing is
+  // an explicit, revocable opt-in (togglable later in Profile).
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [shareScheme, setShareScheme] = useState(false);
 
   useEffect(() => {
     if (resendCooldown <= 0) {
@@ -154,6 +158,10 @@ export function LoginScreen() {
       setError('Renewal date is required (YYYY-MM-DD).');
       return;
     }
+    if (!acceptTerms) {
+      setError('You must accept the Terms & data processing to register.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -163,6 +171,9 @@ export function LoginScreen() {
         policy_number: regPolicy.trim(),
         renewal_date: regRenewal.trim(),
         preferred_language: regLang,
+        consent_terms: true,
+        consent_scheme_sharing: shareScheme,
+        consent_channel: 'app',
       };
       await AuthApi.register(payload);
       // Backend sends OTP automatically after registration — go straight to verify
@@ -400,6 +411,38 @@ export function LoginScreen() {
             </View>
 
             <TouchableOpacity
+              style={s.consentRow}
+              onPress={() => setAcceptTerms(v => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acceptTerms }}
+              accessibilityLabel="Accept terms and data processing consent"
+            >
+              <View style={[s.checkbox, acceptTerms && s.checkboxChecked]}>
+                {acceptTerms && <Text style={s.checkMark}>✓</Text>}
+              </View>
+              <Text style={s.consentText}>
+                I accept the Terms and consent to Toro processing my health data
+                (DPA 2024).
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.consentRowLast}
+              onPress={() => setShareScheme(v => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: shareScheme }}
+              accessibilityLabel="Share verified score with medical scheme"
+            >
+              <View style={[s.checkbox, shareScheme && s.checkboxChecked]}>
+                {shareScheme && <Text style={s.checkMark}>✓</Text>}
+              </View>
+              <Text style={s.consentTextMuted}>
+                Optional: share my verified score with my medical scheme to earn
+                discounts. I can turn this off anytime.
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[s.button, loading && s.buttonDisabled]}
               onPress={submitRegister}
               disabled={loading}
@@ -498,6 +541,37 @@ const s = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { ...typography.body, fontWeight: '600', color: colors.white },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+    gap: 10,
+  },
+  consentRowLast: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: colors.primaryTeal,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  checkboxChecked: { backgroundColor: colors.primaryTeal },
+  checkMark: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  consentText: { flex: 1, color: colors.toroInk, fontSize: 13, lineHeight: 18 },
+  consentTextMuted: {
+    flex: 1,
+    color: colors.textTertiary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
 
   outlineButton: {
     borderWidth: 1,
