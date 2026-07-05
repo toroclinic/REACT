@@ -110,7 +110,12 @@ export async function flushQueue(): Promise<void> {
       }
 
       try {
-        await PricingApi.submitEvent(item.event);
+        // localId was generated at enqueue time and never actually reached
+        // the backend until now — the header comment above claimed this
+        // wiring existed, but it didn't. Without it, a retried submission
+        // after a dropped connection (exactly the case this queue exists
+        // for) double-counted the scored check-in.
+        await PricingApi.submitEvent(item.event, item.localId);
       } catch {
         remaining.push({ ...item, attempts: item.attempts + 1 });
       }

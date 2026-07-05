@@ -31,9 +31,17 @@ import {
   ProfileUpdatePayload,
 } from '../types/api';
 
-const API_BASE_URL =
-  process.env.WELLNESS_API_BASE_URL ??
-  'https://wellness-plus-backend.onrender.com/v1';
+// `process.env.WELLNESS_API_BASE_URL` was never wired to anything — there is
+// no dotenv/babel-env plugin in this project, so it was always `undefined`
+// and every build (including debug/Metro) silently hit production. `__DEV__`
+// is a real RN global (true for a Metro/debug bundle, false for a release
+// build) with no extra config needed. Dev points at localhost so it works
+// with the same `adb reverse tcp:8081 tcp:8081` device workflow the /tecno
+// skill already uses for the JS bundle — run `adb reverse tcp:4000 tcp:4000`
+// to reach a locally-running backend from the device/emulator.
+const API_BASE_URL = __DEV__
+  ? 'http://localhost:4000/v1'
+  : 'https://wellness-plus-backend.onrender.com/v1';
 
 export class ApiError extends Error {
   status: number;
@@ -47,12 +55,18 @@ const REQUEST_TIMEOUT_MS = 15_000;
 
 async function request<T>(
   path: string,
-  options: { method?: string; body?: unknown; auth?: boolean } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    auth?: boolean;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<T> {
-  const { method = 'GET', body, auth = true } = options;
+  const { method = 'GET', body, auth = true, headers: extraHeaders } = options;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...extraHeaders,
   };
   if (auth) {
     const token = await getAccessToken();
@@ -162,10 +176,18 @@ export const AuthApi = {
 // ---- Engagement / pricing ----
 
 export const PricingApi = {
-  submitEvent: (event: EngagementEventRequest) =>
+  // idempotencyKey (offlineQueue's per-event localId) is forwarded as the
+  // Idempotency-Key header the backend already reads (engagement.ts) — a
+  // retried submission after a dropped connection then returns the original
+  // event instead of double-counting a scored check-in. Mirrors the PWA's
+  // submitEvent, which has sent this header since Stage 1(f).
+  submitEvent: (event: EngagementEventRequest, idempotencyKey?: string) =>
     request<EngagementEventResponse>('/engagement/event', {
       method: 'POST',
       body: event,
+      headers: idempotencyKey
+        ? { 'Idempotency-Key': idempotencyKey }
+        : undefined,
     }),
 
   getCredit: (memberId: string) =>
@@ -212,10 +234,10 @@ export const ProfileApi = {
     }),
 
   updateClinic: (memberId: string, clinicId: string | null) =>
-    request<{ ok: boolean }>(`/member/${memberId}/clinic`, {
-      method: 'PATCH',
-      body: { preferred_clinic_id: clinicId },
-    }),
+    request<{ updated: boolean; clinic_id: string | null }>(
+      `/member/${memberId}/clinic`,
+      { method: 'PATCH', body: { clinic_id: clinicId } },
+    ),
 };
 
 // B2 — secure phone-number change (step-up policy proof + code sent to the
@@ -274,7 +296,9 @@ export const ClinicApi = {
   nearby: (lat: number, lng: number) =>
     request<Clinic[]>(`/clinics/nearby?lat=${lat}&lng=${lng}`),
 
-  all: () => request<Clinic[]>('/clinics'),
+  // Backend route is /clinics/all, not /clinics (clinic.ts) — was 404ing
+  // silently (all callers .catch(()=>[])), leaving every clinic picker empty.
+  all: () => request<Clinic[]>('/clinics/all'),
 };
 
 // ---- Rewards ----
@@ -301,9 +325,12 @@ export const MessagesApi = {
   getUnreadCount: (memberId: string) =>
     request<{ count: number }>(`/messages/${memberId}/unread-count`),
 
-  markRead: (memberId: string, messageId: string) =>
-    request<{ ok: boolean }>(`/messages/${memberId}/${messageId}/read`, {
-      method: 'PATCH',
+  // Backend route is POST /messages/:messageId/read — no memberId segment,
+  // no PATCH (messages.ts). Was 404ing (wrong method + wrong path), so the
+  // unread badge never cleared.
+  markRead: (messageId: string) =>
+    request<{ ok: boolean }>(`/messages/${messageId}/read`, {
+      method: 'POST',
     }),
 };
 
@@ -313,9 +340,12 @@ export const RemindersApi = {
   getReminders: (memberId: string) =>
     request<MemberReminder[]>(`/reminders/${memberId}`),
 
-  dismiss: (memberId: string, reminderId: string) =>
-    request<{ ok: boolean }>(`/reminders/${memberId}/${reminderId}/dismiss`, {
-      method: 'PATCH',
+  // Backend route is POST /reminders/:reminderId/dismiss — no memberId
+  // segment (the member is taken from the auth token, reminders.ts), no
+  // PATCH. Was 404ing, so dismissed reminders kept reappearing.
+  dismiss: (reminderId: string) =>
+    request<{ dismissed: boolean }>(`/reminders/${reminderId}/dismiss`, {
+      method: 'POST',
     }),
 };
 
@@ -332,8 +362,10 @@ export const CoachApi = {
   getHistory: (memberId: string) =>
     request<CoachMessage[]>(`/coach/${memberId}/history`),
 
+  // Backend returns {message_id, role, content} (coach.ts) — there is no
+  // `reply` field, so the assistant's answer was always rendered as blank.
   sendMessage: (memberId: string, message: string) =>
-    request<{ reply: string; created_at: string }>(
+    request<{ message_id: string; role: string; content: string }>(
       `/coach/${memberId}/message`,
       { method: 'POST', body: { message } },
     ),

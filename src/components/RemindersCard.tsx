@@ -30,7 +30,7 @@ export function RemindersCard({ memberId }: Props) {
 
   const dismiss = async (reminderId: string) => {
     setReminders(prev => prev.filter(r => r.reminder_id !== reminderId));
-    await RemindersApi.dismiss(memberId, reminderId).catch(() => {});
+    await RemindersApi.dismiss(reminderId).catch(() => {});
   };
 
   if (reminders.length === 0) {

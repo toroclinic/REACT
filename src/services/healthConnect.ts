@@ -170,17 +170,20 @@ async function syncAndroid(memberId: string): Promise<number> {
       continue;
     }
     try {
-      await PricingApi.submitEvent({
-        member_id: memberId,
-        event_type: 'activity_checkin',
-        channel: 'app',
-        timestamp: (session as any).startTime,
-        raw_value: JSON.stringify({
-          activity_type: hcActivityType((session as any).exerciseType ?? 0),
-          duration_minutes: dur,
-          source: 'health_connect',
-        }),
-      });
+      await PricingApi.submitEvent(
+        {
+          member_id: memberId,
+          event_type: 'activity_checkin',
+          channel: 'app',
+          timestamp: (session as any).startTime,
+          raw_value: JSON.stringify({
+            activity_type: hcActivityType((session as any).exerciseType ?? 0),
+            duration_minutes: dur,
+            source: 'health_connect',
+          }),
+        },
+        id,
+      );
       synced.add(id);
       submitted++;
     } catch {
@@ -208,16 +211,19 @@ async function syncAndroid(memberId: string): Promise<number> {
   }
   for (const { id, pct, time } of spo2ByDay.values()) {
     try {
-      await PricingApi.submitEvent({
-        member_id: memberId,
-        event_type: 'spo2_reading',
-        channel: 'app',
-        timestamp: time,
-        raw_value: JSON.stringify({
-          result: `${pct.toFixed(1)}%`,
-          source: 'health_connect',
-        }),
-      });
+      await PricingApi.submitEvent(
+        {
+          member_id: memberId,
+          event_type: 'spo2_reading',
+          channel: 'app',
+          timestamp: time,
+          raw_value: JSON.stringify({
+            result: `${pct.toFixed(1)}%`,
+            source: 'health_connect',
+          }),
+        },
+        id,
+      );
       synced.add(id);
       submitted++;
     } catch {
@@ -238,16 +244,19 @@ async function syncAndroid(memberId: string): Promise<number> {
       continue;
     }
     try {
-      await PricingApi.submitEvent({
-        member_id: memberId,
-        event_type: 'sleep_log',
-        channel: 'app',
-        timestamp: (session as any).startTime,
-        raw_value: JSON.stringify({
-          result: `${hrs.toFixed(1)}h`,
-          source: 'health_connect',
-        }),
-      });
+      await PricingApi.submitEvent(
+        {
+          member_id: memberId,
+          event_type: 'sleep_log',
+          channel: 'app',
+          timestamp: (session as any).startTime,
+          raw_value: JSON.stringify({
+            result: `${hrs.toFixed(1)}h`,
+            source: 'health_connect',
+          }),
+        },
+        id,
+      );
       synced.add(id);
       submitted++;
     } catch {
@@ -347,17 +356,20 @@ async function syncIos(memberId: string): Promise<number> {
       continue;
     }
     try {
-      await PricingApi.submitEvent({
-        member_id: memberId,
-        event_type: 'activity_checkin',
-        channel: 'app',
-        timestamp: workout.startDate,
-        raw_value: JSON.stringify({
-          activity_type: hkActivityType(workout.activityName ?? ''),
-          duration_minutes: dur,
-          source: 'healthkit',
-        }),
-      });
+      await PricingApi.submitEvent(
+        {
+          member_id: memberId,
+          event_type: 'activity_checkin',
+          channel: 'app',
+          timestamp: workout.startDate,
+          raw_value: JSON.stringify({
+            activity_type: hkActivityType(workout.activityName ?? ''),
+            duration_minutes: dur,
+            source: 'healthkit',
+          }),
+        },
+        id,
+      );
       synced.add(id);
       submitted++;
     } catch {
@@ -384,16 +396,19 @@ async function syncIos(memberId: string): Promise<number> {
   }
   for (const { id, pct, time } of spo2ByDay.values()) {
     try {
-      await PricingApi.submitEvent({
-        member_id: memberId,
-        event_type: 'spo2_reading',
-        channel: 'app',
-        timestamp: time,
-        raw_value: JSON.stringify({
-          result: `${pct.toFixed(1)}%`,
-          source: 'healthkit',
-        }),
-      });
+      await PricingApi.submitEvent(
+        {
+          member_id: memberId,
+          event_type: 'spo2_reading',
+          channel: 'app',
+          timestamp: time,
+          raw_value: JSON.stringify({
+            result: `${pct.toFixed(1)}%`,
+            source: 'healthkit',
+          }),
+        },
+        id,
+      );
       synced.add(id);
       submitted++;
     } catch {
@@ -438,17 +453,25 @@ async function syncIos(memberId: string): Promise<number> {
     if (hrs < 0.5) {
       continue;
     }
+    // This submission aggregates several raw sleep-stage samples into one
+    // event, so there's no single source `id` to key off (unlike the loops
+    // above) — earliestStart is deterministic for the same night's samples,
+    // so it's a stable idempotency key across retries.
+    const aggregateId = `hk_sleep_agg_${earliestStart}`;
     try {
-      await PricingApi.submitEvent({
-        member_id: memberId,
-        event_type: 'sleep_log',
-        channel: 'app',
-        timestamp: earliestStart,
-        raw_value: JSON.stringify({
-          result: `${hrs.toFixed(1)}h`,
-          source: 'healthkit',
-        }),
-      });
+      await PricingApi.submitEvent(
+        {
+          member_id: memberId,
+          event_type: 'sleep_log',
+          channel: 'app',
+          timestamp: earliestStart,
+          raw_value: JSON.stringify({
+            result: `${hrs.toFixed(1)}h`,
+            source: 'healthkit',
+          }),
+        },
+        aggregateId,
+      );
       ids.forEach(id => synced.add(id));
       submitted++;
     } catch {

@@ -139,10 +139,12 @@ export function CoachScreen() {
     setLoading(true);
 
     try {
-      const { reply, created_at } = await CoachApi.sendMessage(memberId, text);
+      // Backend returns {message_id, role, content} — no created_at (coach.ts).
+      // Stamp the display timestamp client-side, same as the user bubble above.
+      const { content } = await CoachApi.sendMessage(memberId, text);
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: reply, created_at },
+        { role: 'assistant', content, created_at: new Date().toISOString() },
       ]);
     } catch {
       Alert.alert('Error', 'Could not reach Tora. Please try again.');

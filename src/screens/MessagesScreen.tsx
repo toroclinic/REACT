@@ -180,15 +180,18 @@ export function MessagesScreen() {
     if (!memberId) {
       return;
     }
+    const readAt = new Date().toISOString();
     setMessages(prev =>
-      prev.map(m => (m.message_id === messageId ? { ...m, read: true } : m)),
+      prev.map(m =>
+        m.message_id === messageId ? { ...m, read_at: readAt } : m,
+      ),
     );
-    await MessagesApi.markRead(memberId, messageId).catch(() => {});
+    await MessagesApi.markRead(messageId).catch(() => {});
   };
 
   const handlePress = (item: MemberMessage) => {
     setExpanded(prev => (prev === item.message_id ? null : item.message_id));
-    if (!item.read) {
+    if (!item.read_at) {
       void markRead(item.message_id);
     }
   };
@@ -199,7 +202,7 @@ export function MessagesScreen() {
     }
     setDismissing(reminderId);
     try {
-      await RemindersApi.dismiss(memberId, reminderId);
+      await RemindersApi.dismiss(reminderId);
       setReminders(prev => prev.filter(r => r.reminder_id !== reminderId));
     } catch {
       /* silently fail */
@@ -209,11 +212,12 @@ export function MessagesScreen() {
   };
 
   const renderMessage = ({ item }: { item: MemberMessage }) => {
-    const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.info;
+    const cfg = TYPE_CONFIG[item.message_type] ?? TYPE_CONFIG.info;
     const isOpen = expanded === item.message_id;
+    const isRead = !!item.read_at;
     return (
       <TouchableOpacity
-        style={[styles.row, !item.read && styles.rowUnread]}
+        style={[styles.row, !isRead && styles.rowUnread]}
         onPress={() => handlePress(item)}
         activeOpacity={0.7}
       >
@@ -225,10 +229,10 @@ export function MessagesScreen() {
         <View style={styles.rowContent}>
           <View style={styles.rowHeader}>
             <Text
-              style={[styles.subject, !item.read && styles.subjectUnread]}
+              style={[styles.subject, !isRead && styles.subjectUnread]}
               numberOfLines={isOpen ? undefined : 1}
             >
-              {item.subject}
+              {item.title}
             </Text>
             <Text style={styles.date}>{formatDate(item.created_at)}</Text>
           </View>
@@ -240,7 +244,7 @@ export function MessagesScreen() {
             </Text>
           )}
         </View>
-        {!item.read && <View style={styles.unreadDot} />}
+        {!isRead && <View style={styles.unreadDot} />}
       </TouchableOpacity>
     );
   };
@@ -280,7 +284,7 @@ export function MessagesScreen() {
     );
   };
 
-  const unreadCount = messages.filter(m => !m.read).length;
+  const unreadCount = messages.filter(m => !m.read_at).length;
   const activeReminders = reminders;
 
   return (

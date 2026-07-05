@@ -149,14 +149,21 @@ export interface RedemptionResponse {
   instore_confirmation_id?: string;
 }
 
+// Matches GET /rewards/my-redemptions exactly (rewards.ts) — the backend has
+// no `expires_at`/`offer_id`/`redemption_code` fields on this list endpoint
+// (those only exist on the immediate POST /rewards/:id/redeem response, a
+// separate shape — see RedemptionResponse). expiry_days must be added to
+// redeemed_at client-side to get an expiry date.
 export interface MyRedemption {
   redemption_id: string;
-  offer_id: string;
-  partner: string;
-  offer: string;
+  reward_id: string;
+  code_or_confirmation: string;
   redeemed_at: string;
-  expires_at: string | null;
-  redemption_code: string | null;
+  offer: string;
+  partner: string;
+  icon: string;
+  expiry_days: number;
+  value: string;
 }
 
 export interface ActivityWeek {
@@ -209,13 +216,17 @@ export interface HealthAlert {
   created_at: string;
 }
 
+// Matches GET /messages/:memberId exactly (messages.ts) — the backend field
+// names are title/message_type/read_at, not subject/type/read.
 export interface MemberMessage {
   message_id: string;
-  subject: string;
+  member_id: string | null;
+  title: string;
   body: string;
-  type: MessageType;
-  read: boolean;
+  message_type: MessageType;
+  read_at: string | null;
   created_at: string;
+  sent_by: string;
 }
 
 export interface MemberReminder {

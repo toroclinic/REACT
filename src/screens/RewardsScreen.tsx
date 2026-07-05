@@ -354,50 +354,62 @@ export function RewardsScreen() {
             </Text>
           </View>
         ) : (
-          redemptions.map(r => (
-            <View key={r.redemption_id} style={styles.redemptionRow}>
-              <View style={styles.redemptionInfo}>
-                <Text style={styles.redemptionOffer}>{r.offer}</Text>
-                <Text style={styles.redemptionPartner}>{r.partner}</Text>
-                <Text style={styles.redemptionDate}>
-                  Redeemed{' '}
-                  {new Date(r.redeemed_at).toLocaleDateString('en-BW', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
-                  {r.expires_at
-                    ? ` · Expires ${new Date(r.expires_at).toLocaleDateString(
-                        'en-BW',
-                        { day: 'numeric', month: 'short' },
-                      )}`
-                    : ''}
-                </Text>
-              </View>
-              {r.redemption_code && (
-                <TouchableOpacity
-                  style={styles.codePill}
-                  onPress={() => {
-                    if (r.redemption_code) {
-                      Clipboard.setString(r.redemption_code);
-                    }
-                    setCopied(r.redemption_id);
-                    if (copiedTimerRef.current) {
-                      clearTimeout(copiedTimerRef.current);
-                    }
-                    copiedTimerRef.current = setTimeout(
-                      () => setCopied(null),
-                      2000,
-                    );
-                  }}
-                >
-                  <Text style={styles.codePillText}>
-                    {copied === r.redemption_id ? 'Copied!' : r.redemption_code}
+          redemptions.map(r => {
+            // Backend's my-redemptions list has no expires_at — only
+            // expiry_days (rewards.ts). Compute the same expiry date the
+            // backend itself derives at redeem-time (redeemed_at + expiry_days).
+            const expiresAt = r.expiry_days
+              ? new Date(
+                  new Date(r.redeemed_at).getTime() + r.expiry_days * 86400000,
+                )
+              : null;
+            return (
+              <View key={r.redemption_id} style={styles.redemptionRow}>
+                <View style={styles.redemptionInfo}>
+                  <Text style={styles.redemptionOffer}>{r.offer}</Text>
+                  <Text style={styles.redemptionPartner}>{r.partner}</Text>
+                  <Text style={styles.redemptionDate}>
+                    Redeemed{' '}
+                    {new Date(r.redeemed_at).toLocaleDateString('en-BW', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                    {expiresAt
+                      ? ` · Expires ${expiresAt.toLocaleDateString('en-BW', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}`
+                      : ''}
                   </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ))
+                </View>
+                {r.code_or_confirmation && (
+                  <TouchableOpacity
+                    style={styles.codePill}
+                    onPress={() => {
+                      if (r.code_or_confirmation) {
+                        Clipboard.setString(r.code_or_confirmation);
+                      }
+                      setCopied(r.redemption_id);
+                      if (copiedTimerRef.current) {
+                        clearTimeout(copiedTimerRef.current);
+                      }
+                      copiedTimerRef.current = setTimeout(
+                        () => setCopied(null),
+                        2000,
+                      );
+                    }}
+                  >
+                    <Text style={styles.codePillText}>
+                      {copied === r.redemption_id
+                        ? 'Copied!'
+                        : r.code_or_confirmation}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })
         ))}
 
       {tab === 'catalog' && profile && (
