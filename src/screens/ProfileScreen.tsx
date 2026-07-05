@@ -16,7 +16,12 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuthStore } from '../store/authStore';
 import { useEngagementStore } from '../store/engagementStore';
-import { ProfileApi, ClinicApi, SchemesApi } from '../services/api';
+import {
+  ProfileApi,
+  ClinicApi,
+  SchemesApi,
+  PhoneChangeApi,
+} from '../services/api';
 import { cacheMemberProfile, getCachedMemberProfile } from '../services/cache';
 import {
   Clinic,
@@ -67,6 +72,15 @@ export function ProfileScreen() {
   const [savingScheme, setSavingScheme] = useState(false);
   const [currentSchemeId, setCurrentSchemeId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // B2 — phone-number change (step-up + code to the new number)
+  const [showPhoneChange, setShowPhoneChange] = useState(false);
+  const [pcStep, setPcStep] = useState<'form' | 'code'>('form');
+  const [pcNewPhone, setPcNewPhone] = useState('');
+  const [pcPolicy, setPcPolicy] = useState('');
+  const [pcCode, setPcCode] = useState('');
+  const [pcBusy, setPcBusy] = useState(false);
+  const [pcError, setPcError] = useState('');
 
   // Edit profile
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -167,6 +181,74 @@ export function ProfileScreen() {
       Alert.alert('Error', 'Could not update your scheme. Try again.');
     } finally {
       setSavingScheme(false);
+    }
+  };
+
+  const openPhoneChange = () => {
+    setPcStep('form');
+    setPcNewPhone('');
+    setPcPolicy('');
+    setPcCode('');
+    setPcError('');
+    setShowPhoneChange(true);
+  };
+
+  const startPhoneChange = async () => {
+    if (!memberId) {
+      return;
+    }
+    if (!/^\+267\d{8}$/.test(pcNewPhone.trim())) {
+      setPcError('Enter a valid number in the form +267XXXXXXXX.');
+      return;
+    }
+    if (!pcPolicy.trim()) {
+      setPcError('Enter your policy number to confirm it’s you.');
+      return;
+    }
+    setPcBusy(true);
+    setPcError('');
+    try {
+      await PhoneChangeApi.start(memberId, pcNewPhone.trim(), pcPolicy.trim());
+      setPcStep('code');
+    } catch (err: unknown) {
+      setPcError(
+        err instanceof Error ? err.message : 'Could not start the change.',
+      );
+    } finally {
+      setPcBusy(false);
+    }
+  };
+
+  const verifyPhoneChange = async () => {
+    if (!memberId) {
+      return;
+    }
+    if (!pcCode.trim()) {
+      setPcError('Enter the code we sent to your new number.');
+      return;
+    }
+    setPcBusy(true);
+    setPcError('');
+    try {
+      await PhoneChangeApi.verify(memberId, pcCode.trim());
+      const newPhone = pcNewPhone.trim();
+      setProfile(p => {
+        if (!p) {
+          return p;
+        }
+        const updated = { ...p, phone_number: newPhone };
+        void cacheMemberProfile(updated);
+        return updated;
+      });
+      setShowPhoneChange(false);
+      Alert.alert(
+        'Phone number updated',
+        `Your account is now linked to ${newPhone}.`,
+      );
+    } catch (err: unknown) {
+      setPcError(err instanceof Error ? err.message : 'That code didn’t work.');
+    } finally {
+      setPcBusy(false);
     }
   };
 
@@ -331,6 +413,22 @@ export function ProfileScreen() {
           <View>
             <Text style={styles.settingRowLabel}>Personal details</Text>
             <Text style={styles.settingRowValue}>Edit your profile</Text>
+          </View>
+        </View>
+        <Icon name="chevron-right" size={18} color={colors.textTertiary} />
+      </TouchableOpacity>
+
+      {/* Phone number change (B2 — verified flow) */}
+      <TouchableOpacity style={styles.settingRow} onPress={openPhoneChange}>
+        <View style={styles.settingRowLeft}>
+          <Icon
+            name="phone-sync-outline"
+            size={18}
+            color={colors.primaryTeal}
+          />
+          <View>
+            <Text style={styles.settingRowLabel}>Phone number</Text>
+            <Text style={styles.settingRowValue}>Change your number</Text>
           </View>
         </View>
         <Icon name="chevron-right" size={18} color={colors.textTertiary} />
@@ -673,6 +771,125 @@ export function ProfileScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Phone-change modal (B2) */}
+      <Modal
+        visible={showPhoneChange}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowPhoneChange(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modal}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {pcStep === 'form'
+                ? 'Change phone number'
+                : 'Enter verification code'}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowPhoneChange(false)}
+              style={styles.modalClose}
+              disabled={pcBusy}
+            >
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            contentContainerStyle={styles.editForm}
+            keyboardShouldPersistTaps="handled"
+          >
+            {pcStep === 'form' ? (
+              <>
+                <Text style={styles.pcHint}>
+                  We’ll send a code to your new number to confirm you control
+                  it. For your security, confirm your policy number too. Your
+                  current number will be notified.
+                </Text>
+
+                <Text style={styles.fieldLabel}>New phone number</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  value={pcNewPhone}
+                  onChangeText={setPcNewPhone}
+                  placeholder="+267 7X XXX XXX"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="phone-pad"
+                  autoCapitalize="none"
+                />
+
+                <Text style={styles.fieldLabel}>Policy number</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  value={pcPolicy}
+                  onChangeText={setPcPolicy}
+                  placeholder="Your policy number"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="characters"
+                />
+
+                {pcError ? <Text style={styles.pcError}>{pcError}</Text> : null}
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, pcBusy && styles.saveBtnDisabled]}
+                  onPress={startPhoneChange}
+                  disabled={pcBusy}
+                >
+                  {pcBusy ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Send code</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.pcHint}>
+                  Enter the 6-digit code we sent to {pcNewPhone.trim()}.
+                </Text>
+
+                <Text style={styles.fieldLabel}>Verification code</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  value={pcCode}
+                  onChangeText={setPcCode}
+                  placeholder="6-digit code"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+
+                {pcError ? <Text style={styles.pcError}>{pcError}</Text> : null}
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, pcBusy && styles.saveBtnDisabled]}
+                  onPress={verifyPhoneChange}
+                  disabled={pcBusy}
+                >
+                  {pcBusy ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Confirm change</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.pcBackBtn}
+                  onPress={() => {
+                    setPcStep('form');
+                    setPcError('');
+                  }}
+                  disabled={pcBusy}
+                >
+                  <Text style={styles.pcBackText}>Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -922,4 +1139,27 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   pickerListContent: { paddingBottom: 40 },
+  // B2 — phone-change modal
+  pcHint: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+  },
+  pcError: {
+    ...typography.bodySmall,
+    color: colors.coral,
+    marginTop: spacing.sm,
+  },
+  pcBackBtn: {
+    marginTop: spacing.md,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  pcBackText: {
+    ...typography.body,
+    color: colors.primaryTeal,
+    fontWeight: '600' as const,
+  },
 });

@@ -97,7 +97,20 @@ async function request<T>(
         .catch(() => {});
     }
     const text = await response.text().catch(() => '');
-    throw new ApiError(text || response.statusText, response.status);
+    // The API returns errors as { "error": "message" } — surface just the
+    // message, not the raw JSON body (matches the PWA's request()).
+    let message = text || response.statusText;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as { error?: unknown };
+        if (parsed && typeof parsed.error === 'string') {
+          message = parsed.error;
+        }
+      } catch {
+        // not JSON — keep the raw text
+      }
+    }
+    throw new ApiError(message, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -202,6 +215,22 @@ export const ProfileApi = {
     request<{ ok: boolean }>(`/member/${memberId}/clinic`, {
       method: 'PATCH',
       body: { preferred_clinic_id: clinicId },
+    }),
+};
+
+// B2 — secure phone-number change (step-up policy proof + code sent to the
+// new number; the old number is SMS-alerted). Mirrors the PWA's PhoneChangeApi.
+export const PhoneChangeApi = {
+  start: (memberId: string, newPhoneNumber: string, policyNumber: string) =>
+    request<{ sent: boolean }>(`/member/${memberId}/phone-change/start`, {
+      method: 'POST',
+      body: { new_phone_number: newPhoneNumber, policy_number: policyNumber },
+    }),
+
+  verify: (memberId: string, code: string) =>
+    request<{ changed: boolean }>(`/member/${memberId}/phone-change/verify`, {
+      method: 'POST',
+      body: { code },
     }),
 };
 
