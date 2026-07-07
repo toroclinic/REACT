@@ -5,11 +5,7 @@ import {
   PinSession,
 } from '../store/authStore';
 import { getRefreshToken, setRefreshToken } from './secureStore';
-import { AUTH_MODE } from '../config/authMode';
 import {
-  OtpRequestPayload,
-  OtpVerifyPayload,
-  AuthTokens,
   EngagementEventRequest,
   EngagementEventResponse,
   CreditResponse,
@@ -52,9 +48,14 @@ const API_BASE_URL = __DEV__
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  // Parsed JSON error body, when the response had one — lets callers detect
+  // structured fields like `step_up_required`/`purpose` on a 403 without
+  // re-parsing the message string.
+  body?: Record<string, unknown>;
+  constructor(message: string, status: number, body?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -161,36 +162,30 @@ async function request<T>(
   clearTimeout(timeoutId);
 
   if (!response.ok) {
-    if (auth && response.status === 401) {
-      if (AUTH_MODE === 'pin' && !_retried) {
-        // New model: an access token expired. Try one silent refresh, then
-        // replay the original request with the fresh token. refreshSession()
-        // wipes the session itself on device_revoked.
-        const fresh = await refreshSession();
-        if (fresh) {
-          return request<T>(path, { ...options, _retried: true });
-        }
-        // Refresh failed but the session wasn't explicitly revoked — lock the
-        // UI so the member can re-enter their PIN (which mints a new session).
-        if (useAuthStore.getState().isAuthenticated) {
-          useAuthStore.getState().lock();
-        }
-      } else {
-        // Legacy path: 401 means the opaque session is dead — sign out locally
-        // so App.tsx drops back to LoginScreen.
-        useAuthStore
-          .getState()
-          .signOut()
-          .catch(() => {});
+    if (auth && response.status === 401 && !_retried) {
+      // An access token expired. Try one silent refresh, then replay the
+      // original request with the fresh token. refreshSession() wipes the
+      // session itself on device_revoked.
+      const fresh = await refreshSession();
+      if (fresh) {
+        return request<T>(path, { ...options, _retried: true });
+      }
+      // Refresh failed but the session wasn't explicitly revoked — lock the
+      // UI so the member can re-enter their PIN (which mints a new session).
+      if (useAuthStore.getState().isAuthenticated) {
+        useAuthStore.getState().lock();
       }
     }
     const text = await response.text().catch(() => '');
-    // The API returns errors as { "error": "message" } — surface just the
-    // message, not the raw JSON body (matches the PWA's request()).
+    // The API returns errors as { "error": "message" } — surface the message,
+    // but keep the parsed body too (ApiError.body) so callers can read
+    // structured fields like step_up_required/purpose off a 403.
     let message = text || response.statusText;
+    let parsedBody: Record<string, unknown> | undefined;
     if (text) {
       try {
         const parsed = JSON.parse(text) as { error?: unknown };
+        parsedBody = parsed as Record<string, unknown>;
         if (parsed && typeof parsed.error === 'string') {
           message = parsed.error;
         }
@@ -198,12 +193,13 @@ async function request<T>(
         // not JSON — keep the raw text
       }
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, parsedBody);
   }
   return response.json() as Promise<T>;
 }
 
-// ---- Auth ----
+// ---- Member auth (PIN + device-bound refresh tokens) ----
+// The only member auth path post auth-teardown — legacy OTP-login deleted.
 
 export interface RegisterPayload {
   phone_number: string;
@@ -217,41 +213,18 @@ export interface RegisterPayload {
   consent_channel?: 'app' | 'pwa' | 'ussd' | 'admin';
 }
 
-export const AuthApi = {
-  requestOtp: (payload: OtpRequestPayload) =>
-    request<{ sent: boolean }>('/auth/otp/request', {
-      method: 'POST',
-      body: payload,
-      auth: false,
-    }),
+export type StepUpPurpose = 'phone_change' | 'wallet_pay';
 
-  verifyOtp: (payload: OtpVerifyPayload) =>
-    request<AuthTokens>('/auth/otp/verify', {
-      method: 'POST',
-      body: payload,
-      auth: false,
-    }),
-
-  refresh: (refreshToken: string) =>
-    request<AuthTokens>('/auth/refresh', {
-      method: 'POST',
-      body: { refresh_token: refreshToken },
-      auth: false,
-    }),
-
+export const PinAuthApi = {
+  // Member creation — ends by requesting an enroll-purpose OTP, so the client
+  // moves straight into enrollVerify/enrollComplete below.
   register: (payload: RegisterPayload) =>
     request<{ member_id: string; sent: boolean }>('/auth/register', {
       method: 'POST',
       body: payload,
       auth: false,
     }),
-};
 
-// ---- New auth model (PIN + device-bound refresh tokens) ----
-
-export type StepUpPurpose = 'phone_change' | 'wallet_pay';
-
-export const PinAuthApi = {
   enrollStart: (phone_number: string) =>
     request<{ ok: boolean }>('/auth/enroll/start', {
       method: 'POST',

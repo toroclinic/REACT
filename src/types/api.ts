@@ -77,19 +77,6 @@ export interface CreditResponse {
   scheme_config?: SchemePricingConfig;
 }
 
-export interface OtpRequestPayload {
-  phone_number: string;
-}
-export interface OtpVerifyPayload {
-  phone_number: string;
-  otp: string;
-}
-export interface AuthTokens {
-  access_token: string;
-  refresh_token: string;
-  member_id: string;
-}
-
 export interface MemberProfile {
   member_id: string;
   full_name: string;

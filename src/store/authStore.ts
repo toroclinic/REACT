@@ -1,18 +1,20 @@
-// Auth state — supports BOTH the legacy OTP session (opaque tokens in
-// AsyncStorage) and the new device/PIN model (access JWT in memory, refresh
-// token in the Keychain, device_id/member_id in AsyncStorage). Which one is
-// live is governed by config/authMode.ts; both coexist during the migration.
+// Auth state — PIN + device-bound sessions, the only member auth path post
+// auth-teardown (legacy OTP session deleted; no production members existed to
+// migrate). Access JWT lives in memory only; refresh token in the Keychain
+// (services/secureStore.ts); device_id/member_id in AsyncStorage.
 //
-// New-model lifecycle:
+// Lifecycle:
 //   enroll / pin-login / refresh / recovery  → setPinSession()  (unlocked)
 //   app backgrounded > BACKGROUND_LOCK_MS     → lock()          (session alive,
 //                                                                 UI gated)
 //   PIN re-entered on lock screen             → setPinSession() (unlocked)
+//   member taps "Sign out"                    → signOut()       (server-side
+//                                                                 logout, device
+//                                                                 stays enrolled)
 //   device revoked / reuse detected           → wipeSession()   (re-enroll)
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { AuthTokens } from '../types/api';
 import { clearMemoryCache } from '../services/cache';
 import {
   setRefreshToken,
@@ -20,14 +22,12 @@ import {
   clearRefreshToken,
 } from '../services/secureStore';
 
-const ACCESS_TOKEN_KEY = '@wellness/auth/access_token'; // legacy only
-const REFRESH_TOKEN_KEY = '@wellness/auth/refresh_token'; // legacy only
 const MEMBER_ID_KEY = '@wellness/auth/member_id';
 const DEVICE_ID_KEY = '@wellness/auth/device_id';
 const BIOMETRIC_KEY = '@wellness/auth/biometric_enabled';
 
-// In-memory access token (new model keeps it off disk entirely; legacy also
-// caches it here to avoid a disk read per request).
+// In-memory access token — never persisted; a cold launch always starts
+// LOCKED (see hydrate below) and re-derives it via PIN login or silent refresh.
 let _cachedAccess: string | null | undefined;
 
 export interface PinSession {
@@ -40,17 +40,16 @@ export interface PinSession {
 interface AuthState {
   memberId: string | null;
   deviceId: string | null;
-  isAuthenticated: boolean; // has a usable session (legacy) or enrolled device
-  isLocked: boolean; // new model: UI gated behind PIN until unlocked
+  isAuthenticated: boolean; // a device is enrolled
+  isLocked: boolean; // UI gated behind PIN until unlocked
   biometricEnabled: boolean;
 
   hydrate: () => Promise<void>;
-  setSession: (tokens: AuthTokens) => Promise<void>; // legacy path
-  setPinSession: (session: PinSession) => Promise<void>; // new model
+  setPinSession: (session: PinSession) => Promise<void>;
   lock: () => void;
   setBiometricEnabled: (on: boolean) => Promise<void>;
-  wipeSession: () => Promise<void>; // device revoked
-  signOut: () => Promise<void>;
+  wipeSession: () => Promise<void>; // device revoked — forces re-enrollment
+  signOut: () => void; // local half of sign-out; caller also hits pin/logout
 }
 
 export const useAuthStore = create<AuthState>(set => ({
@@ -63,48 +62,21 @@ export const useAuthStore = create<AuthState>(set => ({
   hydrate: async () => {
     const pairs = await AsyncStorage.multiGet([
       MEMBER_ID_KEY,
-      ACCESS_TOKEN_KEY,
       DEVICE_ID_KEY,
       BIOMETRIC_KEY,
     ]);
     const memberId = pairs[0]![1];
-    const legacyAccess = pairs[1]![1];
-    const deviceId = pairs[2]![1];
-    const biometricEnabled = pairs[3]![1] === 'yes';
+    const deviceId = pairs[1]![1];
+    const biometricEnabled = pairs[2]![1] === 'yes';
 
-    if (deviceId && memberId) {
-      // New model: a device is enrolled. The access token is never persisted,
-      // so a cold launch always starts LOCKED — the lock screen unlocks via
-      // PIN login or (biometric) silent refresh.
-      _cachedAccess = null;
-      set({
-        memberId,
-        deviceId,
-        isAuthenticated: true,
-        isLocked: true,
-        biometricEnabled,
-      });
-      return;
-    }
-    // Legacy session.
-    _cachedAccess = legacyAccess ?? null;
+    _cachedAccess = null;
     set({
       memberId,
-      deviceId: null,
-      isAuthenticated: Boolean(memberId && legacyAccess),
-      isLocked: false,
-      biometricEnabled: false,
+      deviceId,
+      isAuthenticated: Boolean(deviceId && memberId),
+      isLocked: Boolean(deviceId && memberId),
+      biometricEnabled,
     });
-  },
-
-  setSession: async tokens => {
-    _cachedAccess = tokens.access_token;
-    await AsyncStorage.multiSet([
-      [ACCESS_TOKEN_KEY, tokens.access_token],
-      [REFRESH_TOKEN_KEY, tokens.refresh_token],
-      [MEMBER_ID_KEY, tokens.member_id],
-    ]);
-    set({ memberId: tokens.member_id, isAuthenticated: true, isLocked: false });
   },
 
   setPinSession: async session => {
@@ -143,8 +115,6 @@ export const useAuthStore = create<AuthState>(set => ({
     clearMemoryCache();
     await clearRefreshToken();
     await AsyncStorage.multiRemove([
-      ACCESS_TOKEN_KEY,
-      REFRESH_TOKEN_KEY,
       MEMBER_ID_KEY,
       DEVICE_ID_KEY,
       BIOMETRIC_KEY,
@@ -158,37 +128,24 @@ export const useAuthStore = create<AuthState>(set => ({
     });
   },
 
-  signOut: async () => {
-    // Same local teardown as wipeSession; kept as a distinct name because the
-    // API layer calls signOut() on legacy 401s.
+  // Local half of sign-out: drops the in-memory access token and the (now
+  // server-dead) Keychain refresh token, then locks the UI. The device stays
+  // enrolled (member_id/device_id survive) — PIN login mints a fresh session,
+  // no re-enrollment needed. Callers hit PinAuthApi's logout endpoint first
+  // (best-effort) so the server actually revokes the session; this function
+  // only does the client-side half and is deliberately synchronous so a
+  // caller doesn't need to await Keychain I/O before the UI locks.
+  signOut: () => {
     _cachedAccess = null;
     clearMemoryCache();
-    await clearRefreshToken();
-    await AsyncStorage.multiRemove([
-      ACCESS_TOKEN_KEY,
-      REFRESH_TOKEN_KEY,
-      MEMBER_ID_KEY,
-      DEVICE_ID_KEY,
-      BIOMETRIC_KEY,
-    ]);
-    set({
-      memberId: null,
-      deviceId: null,
-      isAuthenticated: false,
-      isLocked: false,
-      biometricEnabled: false,
-    });
+    void clearRefreshToken();
+    set({ isLocked: true });
   },
 }));
 
-// Access token accessor for the API client (in-memory only for the new model).
+// Access token accessor for the API client (in-memory only).
 export async function getAccessToken(): Promise<string | null> {
-  if (_cachedAccess !== undefined) {
-    return _cachedAccess;
-  }
-  const token = await AsyncStorage.getItem(ACCESS_TOKEN_KEY); // legacy cold start
-  _cachedAccess = token;
-  return token;
+  return _cachedAccess ?? null;
 }
 
 /** Set the in-memory access token after a silent refresh (no store re-render). */

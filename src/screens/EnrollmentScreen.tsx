@@ -1,6 +1,8 @@
-// Device enrollment (new auth model) — auth migration Phase 3.
-// phone → SMS OTP → set a 4-6 digit PIN. On completion the device is enrolled
-// and the session is unlocked; routine logins afterwards use the PIN only.
+// Device enrollment (new auth model) — the only member auth path post
+// auth-teardown. Two entry funnels converge on the same OTP → PIN steps:
+//   - existing member: phone → OTP → PIN
+//   - new member:      register (name/policy/renewal/phone) → OTP → PIN
+//     (registration itself requests the enroll-purpose OTP server-side)
 import React, { useState } from 'react';
 import {
   Text,
@@ -16,7 +18,7 @@ import { PinAuthApi, ApiError } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
-type Step = 'phone' | 'otp' | 'pin';
+type Step = 'phone' | 'register' | 'otp' | 'pin';
 
 export function EnrollmentScreen() {
   const setPinSession = useAuthStore(s => s.setPinSession);
@@ -28,6 +30,12 @@ export function EnrollmentScreen() {
   const [pin2, setPin2] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Registration-only fields.
+  const [fullName, setFullName] = useState('');
+  const [policyNumber, setPolicyNumber] = useState('');
+  const [renewalDate, setRenewalDate] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const normalizedPhone = () => {
     const p = phone.replace(/\s/g, '');
@@ -43,6 +51,36 @@ export function EnrollmentScreen() {
     } catch (e) {
       setError(
         e instanceof ApiError ? e.message : 'Could not send a code. Try again.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitRegister = async () => {
+    if (!fullName.trim() || !policyNumber.trim() || !renewalDate.trim()) {
+      setError('Full name, policy number and renewal date are required.');
+      return;
+    }
+    if (!agreedToTerms) {
+      setError('Please agree to the Terms & Privacy Policy to continue.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      await PinAuthApi.register({
+        phone_number: normalizedPhone(),
+        full_name: fullName.trim(),
+        policy_number: policyNumber.trim(),
+        renewal_date: renewalDate.trim(),
+        consent_terms: true,
+        consent_channel: 'app',
+      });
+      setStep('otp'); // registration itself requested the enroll OTP
+    } catch (e) {
+      setError(
+        e instanceof ApiError ? e.message : 'Could not register. Try again.',
       );
     } finally {
       setLoading(false);
@@ -126,6 +164,80 @@ export function EnrollmentScreen() {
               loading={loading}
               disabled={phone.length < 8}
             />
+            <TouchableOpacity
+              style={s.link}
+              onPress={() => {
+                setError('');
+                setStep('register');
+              }}
+            >
+              <Text style={s.linkText}>New here? Register</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {step === 'register' && (
+          <>
+            <Text style={s.sub}>
+              Create your account. We'll send a code to your number to confirm
+              it's you.
+            </Text>
+            <TextInput
+              style={s.input}
+              placeholder="Full name"
+              placeholderTextColor={colors.textSecondary}
+              value={fullName}
+              onChangeText={setFullName}
+              autoFocus
+            />
+            <TextInput
+              style={s.input}
+              placeholder="Policy number"
+              placeholderTextColor={colors.textSecondary}
+              value={policyNumber}
+              onChangeText={setPolicyNumber}
+            />
+            <TextInput
+              style={s.input}
+              placeholder="Renewal date (YYYY-MM-DD)"
+              placeholderTextColor={colors.textSecondary}
+              value={renewalDate}
+              onChangeText={setRenewalDate}
+            />
+            <TextInput
+              style={s.input}
+              placeholder="+267 7X XXX XXX"
+              placeholderTextColor={colors.textSecondary}
+              keyboardType="phone-pad"
+              value={phone}
+              onChangeText={setPhone}
+            />
+            <TouchableOpacity
+              style={s.checkboxRow}
+              onPress={() => setAgreedToTerms(a => !a)}
+            >
+              <Text style={s.checkbox}>{agreedToTerms ? '☑' : '☐'}</Text>
+              <Text style={s.checkboxLabel}>
+                I agree to the Terms & Privacy Policy
+              </Text>
+            </TouchableOpacity>
+            <PrimaryButton
+              label="Register"
+              onPress={submitRegister}
+              loading={loading}
+              disabled={
+                !fullName || !policyNumber || !renewalDate || phone.length < 8
+              }
+            />
+            <TouchableOpacity
+              style={s.link}
+              onPress={() => {
+                setError('');
+                setStep('phone');
+              }}
+            >
+              <Text style={s.linkText}>Already a member? Sign in</Text>
+            </TouchableOpacity>
           </>
         )}
 
@@ -245,6 +357,21 @@ const s = StyleSheet.create({
     fontSize: 17,
     marginBottom: spacing.md,
   },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  checkbox: {
+    fontSize: 18,
+    color: colors.primaryTeal,
+    marginRight: spacing.sm,
+  },
+  checkboxLabel: {
+    ...typography.body,
+    color: colors.textSecondary,
+    flexShrink: 1,
+  },
   btn: {
     backgroundColor: colors.primaryTeal,
     borderRadius: radius.md,
@@ -255,6 +382,12 @@ const s = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.5 },
   btnText: { ...typography.body, color: colors.white, fontWeight: '700' },
+  link: { marginTop: spacing.lg, alignItems: 'center' },
+  linkText: {
+    ...typography.body,
+    color: colors.primaryTeal,
+    fontWeight: '600',
+  },
   error: {
     color: colors.dangerText,
     marginTop: spacing.md,

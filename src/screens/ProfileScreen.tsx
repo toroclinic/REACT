@@ -21,7 +21,10 @@ import {
   ClinicApi,
   SchemesApi,
   PhoneChangeApi,
+  PinAuthApi,
+  ApiError,
 } from '../services/api';
+import { StepUpModal } from '../components/StepUpModal';
 import { cacheMemberProfile, getCachedMemberProfile } from '../services/cache';
 import {
   Clinic,
@@ -141,7 +144,10 @@ export function ProfileScreen() {
         text: 'Sign out',
         style: 'destructive',
         onPress: () => {
-          void signOut();
+          // Best-effort server-side revoke (kills the refresh session; the
+          // device stays enrolled), then the local half locks the UI.
+          void PinAuthApi.logout().catch(() => {});
+          signOut();
         },
       },
     ]);
@@ -211,6 +217,14 @@ export function ProfileScreen() {
       await PhoneChangeApi.start(memberId, pcNewPhone.trim(), pcPolicy.trim());
       setPcStep('code');
     } catch (err: unknown) {
+      if (
+        err instanceof ApiError &&
+        err.status === 403 &&
+        err.body?.step_up_required
+      ) {
+        setPcStepUpOpen(true);
+        return;
+      }
       setPcError(
         err instanceof Error ? err.message : 'Could not start the change.',
       );
@@ -218,6 +232,10 @@ export function ProfileScreen() {
       setPcBusy(false);
     }
   };
+
+  // Step-up (auth teardown): phone-change now unconditionally requires a fresh
+  // OTP before it can start. On verification, retry starting the change once.
+  const [pcStepUpOpen, setPcStepUpOpen] = useState(false);
 
   const verifyPhoneChange = async () => {
     if (!memberId) {
@@ -890,6 +908,16 @@ export function ProfileScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
+
+      <StepUpModal
+        visible={pcStepUpOpen}
+        purpose="phone_change"
+        onClose={() => setPcStepUpOpen(false)}
+        onVerified={() => {
+          setPcStepUpOpen(false);
+          void startPhoneChange();
+        }}
+      />
     </ScrollView>
   );
 }

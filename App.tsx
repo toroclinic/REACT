@@ -14,11 +14,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from './src/store/authStore';
 import { startQueueAutoFlush } from './src/services/offlineQueue';
 import { RootNavigator } from './src/navigation/RootNavigator';
-import { LoginScreen } from './src/screens/LoginScreen';
 import { EnrollmentScreen } from './src/screens/EnrollmentScreen';
 import { PinLockScreen } from './src/screens/PinLockScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
-import { AUTH_MODE, BACKGROUND_LOCK_MS } from './src/config/authMode';
+import { BACKGROUND_LOCK_MS } from './src/config/authMode';
 import { colors, spacing, typography } from './src/theme/tokens';
 
 const WELCOME_KEY = 'wellness:welcome_seen';
@@ -117,9 +116,6 @@ export default function App() {
   // return. The session token stays alive underneath — this is a UI lock, not a
   // sign-out. Only applies once a device is enrolled (deviceId present).
   useEffect(() => {
-    if (AUTH_MODE !== 'pin') {
-      return;
-    }
     let backgroundedAt: number | null = null;
     const onChange = (state: AppStateStatus) => {
       if (state === 'background' || state === 'inactive') {
@@ -158,27 +154,19 @@ export default function App() {
     );
   }
 
-  // Auth gating. New model (AUTH_MODE='pin'): not enrolled → EnrollmentScreen;
-  // enrolled but locked → PinLockScreen; unlocked → the app. Legacy model:
-  // the original OTP LoginScreen. Both paths stay reachable behind the flag
-  // until Phase 5 retires the legacy one.
+  // Auth gating — PIN + device enrollment is the only member auth path (auth
+  // teardown: legacy OTP login deleted outright). Not enrolled →
+  // EnrollmentScreen; enrolled but locked → PinLockScreen; unlocked → the app.
   const authGate = () => {
-    if (AUTH_MODE === 'pin') {
-      if (!isAuthenticated) {
-        return <EnrollmentScreen />;
-      }
-      if (isLocked || !deviceId) {
-        return <PinLockScreen />;
-      }
-      return (
-        <NavigationContainer>
-          <RootNavigator />
-        </NavigationContainer>
-      );
+    if (!isAuthenticated) {
+      return <EnrollmentScreen />;
+    }
+    if (isLocked || !deviceId) {
+      return <PinLockScreen />;
     }
     return (
       <NavigationContainer>
-        {isAuthenticated ? <RootNavigator /> : <LoginScreen />}
+        <RootNavigator />
       </NavigationContainer>
     );
   };

@@ -15,7 +15,8 @@ import {
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { WalletApi, ClinicApi } from '../services/api';
+import { WalletApi, ClinicApi, ApiError } from '../services/api';
+import { StepUpModal } from '../components/StepUpModal';
 import {
   WalletBalance,
   WalletTransaction,
@@ -334,6 +335,14 @@ export function WalletScreen() {
       setPayAmount('');
       void fetchBalance(true);
     } catch (e: unknown) {
+      if (
+        e instanceof ApiError &&
+        e.status === 403 &&
+        e.body?.step_up_required
+      ) {
+        setStepUpOpen(true);
+        return;
+      }
       setPayError(
         e instanceof Error ? e.message : 'Payment failed. Please try again.',
       );
@@ -341,6 +350,11 @@ export function WalletScreen() {
       setPaying(false);
     }
   }, [selectedClinic, payAmount, walletData, fetchBalance]);
+
+  // Step-up (auth teardown): pay-clinic above the threshold, or the first
+  // payment from a freshly enrolled device, requires a fresh OTP regardless of
+  // client state. On verification, retry the same payment once.
+  const [stepUpOpen, setStepUpOpen] = useState(false);
 
   const displayedTxns = allLoaded
     ? allTxns
@@ -793,6 +807,16 @@ export function WalletScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <StepUpModal
+        visible={stepUpOpen}
+        purpose="wallet_pay"
+        onClose={() => setStepUpOpen(false)}
+        onVerified={() => {
+          setStepUpOpen(false);
+          void submitPayClinic();
+        }}
+      />
     </View>
   );
 }
