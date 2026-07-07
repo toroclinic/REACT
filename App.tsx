@@ -7,13 +7,18 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from './src/store/authStore';
 import { startQueueAutoFlush } from './src/services/offlineQueue';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { LoginScreen } from './src/screens/LoginScreen';
+import { EnrollmentScreen } from './src/screens/EnrollmentScreen';
+import { PinLockScreen } from './src/screens/PinLockScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
+import { AUTH_MODE, BACKGROUND_LOCK_MS } from './src/config/authMode';
 import { colors, spacing, typography } from './src/theme/tokens';
 
 const WELCOME_KEY = 'wellness:welcome_seen';
@@ -85,7 +90,7 @@ const eb = StyleSheet.create({
 });
 
 export default function App() {
-  const { isAuthenticated, hydrate } = useAuthStore();
+  const { isAuthenticated, isLocked, deviceId, hydrate, lock } = useAuthStore();
   const [isHydrated, setIsHydrated] = useState(false);
   // undefined = not yet read; true = seen before; false = first launch
   const [welcomeSeen, setWelcomeSeen] = useState<boolean | undefined>(
@@ -106,6 +111,30 @@ export default function App() {
     const unsubscribe = startQueueAutoFlush();
     return unsubscribe;
   }, [hydrate]);
+
+  // Background lock (new model, approved D2): when the app has been in the
+  // background longer than BACKGROUND_LOCK_MS, gate the UI behind the PIN on
+  // return. The session token stays alive underneath — this is a UI lock, not a
+  // sign-out. Only applies once a device is enrolled (deviceId present).
+  useEffect(() => {
+    if (AUTH_MODE !== 'pin') {
+      return;
+    }
+    let backgroundedAt: number | null = null;
+    const onChange = (state: AppStateStatus) => {
+      if (state === 'background' || state === 'inactive') {
+        backgroundedAt = Date.now();
+      } else if (state === 'active' && backgroundedAt != null) {
+        const away = Date.now() - backgroundedAt;
+        backgroundedAt = null;
+        if (away >= BACKGROUND_LOCK_MS && useAuthStore.getState().deviceId) {
+          lock();
+        }
+      }
+    };
+    const subscription = AppState.addEventListener('change', onChange);
+    return () => subscription.remove();
+  }, [lock]);
 
   const handleWelcomeContinue = async () => {
     await AsyncStorage.setItem(WELCOME_KEY, 'yes').catch(() => {});
@@ -129,13 +158,36 @@ export default function App() {
     );
   }
 
+  // Auth gating. New model (AUTH_MODE='pin'): not enrolled → EnrollmentScreen;
+  // enrolled but locked → PinLockScreen; unlocked → the app. Legacy model:
+  // the original OTP LoginScreen. Both paths stay reachable behind the flag
+  // until Phase 5 retires the legacy one.
+  const authGate = () => {
+    if (AUTH_MODE === 'pin') {
+      if (!isAuthenticated) {
+        return <EnrollmentScreen />;
+      }
+      if (isLocked || !deviceId) {
+        return <PinLockScreen />;
+      }
+      return (
+        <NavigationContainer>
+          <RootNavigator />
+        </NavigationContainer>
+      );
+    }
+    return (
+      <NavigationContainer>
+        {isAuthenticated ? <RootNavigator /> : <LoginScreen />}
+      </NavigationContainer>
+    );
+  };
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor={colors.toroInk} />
-        <NavigationContainer>
-          {isAuthenticated ? <RootNavigator /> : <LoginScreen />}
-        </NavigationContainer>
+        {authGate()}
       </SafeAreaProvider>
     </ErrorBoundary>
   );

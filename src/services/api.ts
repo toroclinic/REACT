@@ -1,4 +1,11 @@
-import { getAccessToken, useAuthStore } from '../store/authStore';
+import {
+  getAccessToken,
+  setAccessTokenInMemory,
+  useAuthStore,
+  PinSession,
+} from '../store/authStore';
+import { getRefreshToken, setRefreshToken } from './secureStore';
+import { AUTH_MODE } from '../config/authMode';
 import {
   OtpRequestPayload,
   OtpVerifyPayload,
@@ -53,6 +60,54 @@ export class ApiError extends Error {
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
+// Single-flight silent refresh: many requests can 401 at once when the 15-min
+// access token expires; they all await one rotation instead of racing (which
+// would trip the backend's reuse detection on the refresh token). Resolves to
+// the new access token, or null if the session is gone.
+let _refreshInFlight: Promise<string | null> | null = null;
+
+async function refreshSession(): Promise<string | null> {
+  if (_refreshInFlight) {
+    return _refreshInFlight;
+  }
+  _refreshInFlight = (async () => {
+    const refresh = await getRefreshToken();
+    if (!refresh) {
+      return null;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/pin/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      });
+      if (!res.ok) {
+        const bodyJson = (await res.json().catch(() => ({}))) as {
+          device_revoked?: boolean;
+        };
+        // device_revoked (reuse detection / admin kill) → force re-enrollment.
+        if (bodyJson.device_revoked) {
+          await useAuthStore.getState().wipeSession();
+        }
+        return null;
+      }
+      const tokens = (await res.json()) as PinSession;
+      setAccessTokenInMemory(tokens.access_token);
+      await setRefreshToken(tokens.refresh_token, {
+        biometric: useAuthStore.getState().biometricEnabled,
+      });
+      return tokens.access_token;
+    } catch {
+      return null;
+    }
+  })();
+  try {
+    return await _refreshInFlight;
+  } finally {
+    _refreshInFlight = null;
+  }
+}
+
 async function request<T>(
   path: string,
   options: {
@@ -60,9 +115,16 @@ async function request<T>(
     body?: unknown;
     auth?: boolean;
     headers?: Record<string, string>;
+    _retried?: boolean;
   } = {},
 ): Promise<T> {
-  const { method = 'GET', body, auth = true, headers: extraHeaders } = options;
+  const {
+    method = 'GET',
+    body,
+    auth = true,
+    headers: extraHeaders,
+    _retried = false,
+  } = options;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -99,16 +161,28 @@ async function request<T>(
   clearTimeout(timeoutId);
 
   if (!response.ok) {
-    // A 401 on an authenticated request means the session is no longer valid
-    // server-side — most commonly the idle-timeout auto-logout (see backend
-    // authService.ts). Sign out locally so App.tsx's isAuthenticated check
-    // drops straight back to LoginScreen instead of leaving the member stuck
-    // on a screen that can no longer load any data.
     if (auth && response.status === 401) {
-      useAuthStore
-        .getState()
-        .signOut()
-        .catch(() => {});
+      if (AUTH_MODE === 'pin' && !_retried) {
+        // New model: an access token expired. Try one silent refresh, then
+        // replay the original request with the fresh token. refreshSession()
+        // wipes the session itself on device_revoked.
+        const fresh = await refreshSession();
+        if (fresh) {
+          return request<T>(path, { ...options, _retried: true });
+        }
+        // Refresh failed but the session wasn't explicitly revoked — lock the
+        // UI so the member can re-enter their PIN (which mints a new session).
+        if (useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().lock();
+        }
+      } else {
+        // Legacy path: 401 means the opaque session is dead — sign out locally
+        // so App.tsx drops back to LoginScreen.
+        useAuthStore
+          .getState()
+          .signOut()
+          .catch(() => {});
+      }
     }
     const text = await response.text().catch(() => '');
     // The API returns errors as { "error": "message" } — surface just the
@@ -170,6 +244,136 @@ export const AuthApi = {
       method: 'POST',
       body: payload,
       auth: false,
+    }),
+};
+
+// ---- New auth model (PIN + device-bound refresh tokens) ----
+
+export type StepUpPurpose = 'phone_change' | 'wallet_pay';
+
+export const PinAuthApi = {
+  enrollStart: (phone_number: string) =>
+    request<{ ok: boolean }>('/auth/enroll/start', {
+      method: 'POST',
+      body: { phone_number },
+      auth: false,
+    }),
+
+  enrollVerify: (phone_number: string, otp: string) =>
+    request<{ enrollment_ticket: string }>('/auth/enroll/verify', {
+      method: 'POST',
+      body: { phone_number, otp },
+      auth: false,
+    }),
+
+  enrollComplete: (
+    enrollment_ticket: string,
+    pin: string,
+    device_name: string,
+  ) =>
+    request<PinSession & { refresh_expires_at: string }>(
+      '/auth/enroll/complete',
+      {
+        method: 'POST',
+        body: { enrollment_ticket, pin, device_name, platform: 'android' },
+        auth: false,
+      },
+    ),
+
+  pinLogin: (device_id: string, pin: string) =>
+    request<PinSession & { refresh_expires_at: string }>('/auth/pin/login', {
+      method: 'POST',
+      body: { device_id, pin },
+      auth: false,
+    }),
+
+  logout: () =>
+    request<{ ok: boolean }>('/auth/pin/logout', { method: 'POST' }),
+
+  recoveryStart: (phone_number: string) =>
+    request<{ ok: boolean }>('/auth/recovery/start', {
+      method: 'POST',
+      body: { phone_number },
+      auth: false,
+    }),
+
+  recoveryVerify: (
+    phone_number: string,
+    otp: string,
+    device_id: string,
+    new_pin: string,
+  ) =>
+    request<PinSession & { refresh_expires_at: string }>(
+      '/auth/recovery/verify',
+      {
+        method: 'POST',
+        body: { phone_number, otp, device_id, new_pin },
+        auth: false,
+      },
+    ),
+
+  stepUpRequest: (purpose: StepUpPurpose) =>
+    request<{ ok: boolean; sent: boolean }>('/auth/step-up/request', {
+      method: 'POST',
+      body: { purpose },
+    }),
+
+  stepUpVerify: (purpose: StepUpPurpose, otp: string) =>
+    request<{ ok: boolean }>('/auth/step-up/verify', {
+      method: 'POST',
+      body: { purpose, otp },
+    }),
+};
+
+// Biometric silent unlock: read the Keychain refresh token (which triggers the
+// biometric prompt if enabled), rotate it for a fresh session, and unlock the
+// store. Returns true on success. Used by the PIN lock screen so a returning
+// member with biometrics on can resume without retyping the PIN — the server
+// still verifies the token, so this is convenience over the PIN, not a bypass.
+export async function attemptSilentUnlock(): Promise<boolean> {
+  const refresh = await getRefreshToken('Unlock Wellness+');
+  if (!refresh) {
+    return false;
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/pin/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as {
+        device_revoked?: boolean;
+      };
+      if (j.device_revoked) {
+        await useAuthStore.getState().wipeSession();
+      }
+      return false;
+    }
+    const tokens = (await res.json()) as PinSession;
+    await useAuthStore.getState().setPinSession(tokens);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const DevicesApi = {
+  list: (memberId: string) =>
+    request<{
+      devices: Array<{
+        device_id: string;
+        device_name: string;
+        platform: string;
+        status: string;
+        created_at: string;
+        last_seen_at: string | null;
+        current: boolean;
+      }>;
+    }>(`/member/${memberId}/devices`),
+  revoke: (memberId: string, deviceId: string) =>
+    request<{ ok: boolean }>(`/member/${memberId}/devices/${deviceId}`, {
+      method: 'DELETE',
     }),
 };
 
