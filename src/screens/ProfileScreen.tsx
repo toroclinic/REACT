@@ -969,7 +969,7 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 26,
     fontWeight: '500' as const,
-    color: colors.toroInk,
+    color: colors.primaryTealText, // AA teal on the mint avatar circle
   },
   syncIndicator: { position: 'absolute', bottom: -4, right: -4 },
   name: { ...typography.h2, color: colors.textPrimary },

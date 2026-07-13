@@ -35,7 +35,7 @@ function ToroRaindrop({
         fontFamily="Georgia, serif"
         fontWeight="700"
         fontSize="24"
-        fill="#ffffff"
+        fill="#0A302E"
       >
         TORO
       </SvgText>
@@ -180,25 +180,25 @@ const FEATURES = [
     emoji: '🩺',
     label: 'Health screenings',
     sub: 'Log BP, glucose, SpO₂ and more',
-    accent: '#7FB3A0',
+    accent: '#0D9E8F',
   },
   {
     emoji: '🏃',
     label: 'Activity tracking',
     sub: 'Earn points for every workout',
-    accent: '#6FCF97',
+    accent: '#0B6B44',
   },
   {
     emoji: '💊',
     label: 'Wellness rewards',
     sub: 'Unlock premium discounts up to 10%',
-    accent: '#C8A96A',
+    accent: '#8A5A24',
   },
   {
     emoji: '🚨',
     label: 'Instant escalation',
     sub: 'Critical results reach a doctor in minutes',
-    accent: '#EB5757',
+    accent: '#C4362A',
   },
 ];
 
@@ -331,12 +331,12 @@ export function WelcomeScreen({ hydrated, firstLaunch, onContinue }: Props) {
 
 // ─── Loader styles ─────────────────────────────────────────────────────────────
 
-const INK = '#0F1C16';
-const FOREST = '#1A3328';
-const SAGE = '#2D5C47';
-const GOLD = '#C8A96A';
-const CREAM = '#F2EFE8';
-const MIST = '#7FB3A0';
+const INK = '#F7FAF9'; // Paper (was dark ink — constants inverted to board light)
+const FOREST = '#FFFFFF'; // white card surface
+const SAGE = '#C9DEDA'; // strong hairline
+const GOLD = '#C8873A'; // board gold-500
+const CREAM = '#0A302E'; // pine — primary text (was cream-on-dark)
+const MIST = '#4A5F5C'; // slate secondary
 
 const ls = StyleSheet.create({
   screen: {
@@ -349,7 +349,7 @@ const ls = StyleSheet.create({
   progressTrack: {
     width: PROGRESS_BAR_W,
     height: 3,
-    backgroundColor: 'rgba(200,169,106,0.18)',
+    backgroundColor: 'rgba(200,135,58,0.14)',
     borderRadius: 99,
     overflow: 'hidden',
   },
@@ -373,7 +373,7 @@ const ld = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    backgroundColor: 'rgba(45,92,71,0.45)',
+    backgroundColor: '#DCF0EB',
     borderWidth: 1,
     borderColor: SAGE,
     borderRadius: 99,
@@ -404,7 +404,7 @@ const ld = StyleSheet.create({
   headlineAccent: { color: GOLD, fontStyle: 'italic' },
   sub: {
     fontSize: 15,
-    color: 'rgba(242,239,232,0.55)',
+    color: '#6E8985',
     textAlign: 'center',
     maxWidth: 290,
     lineHeight: 24,
@@ -412,7 +412,7 @@ const ld = StyleSheet.create({
 
   rule: {
     height: 1,
-    backgroundColor: 'rgba(45,92,71,0.35)',
+    backgroundColor: '#DCF0EB',
     marginHorizontal: 0,
   },
 
@@ -425,7 +425,7 @@ const ld = StyleSheet.create({
   },
   featureBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(45,92,71,0.25)',
+    borderBottomColor: '#E4EEEB',
   },
   featureIconWrap: {
     width: 44,
@@ -433,7 +433,7 @@ const ld = StyleSheet.create({
     borderRadius: 13,
     backgroundColor: FOREST,
     borderWidth: 1,
-    borderColor: 'rgba(45,92,71,0.5)',
+    borderColor: '#C9DEDA',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -447,7 +447,7 @@ const ld = StyleSheet.create({
   },
   featureSub: {
     fontSize: 12,
-    color: 'rgba(242,239,232,0.55)',
+    color: '#6E8985',
     lineHeight: 17,
     marginTop: 2,
   },
@@ -473,7 +473,7 @@ const ld = StyleSheet.create({
   },
   legal: {
     fontSize: 11,
-    color: 'rgba(127,179,160,0.5)',
+    color: '#6E8985',
     textAlign: 'center',
     letterSpacing: 0.4,
   },

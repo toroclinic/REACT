@@ -3,8 +3,9 @@
 // Setswana; the falling-rain motif behind the credit number is a deliberate
 // nod to the product's core mechanic, not decoration.
 //
-// Mirrors PWA .pula-card: gradient #0A5C58 → #0D7A74 → #0F8C84, radius-lg,
-// and native elevation replacing CSS box-shadow.
+// Board language: the pula card sits on the Deep Pine dark-accent surface —
+// payments/wallet is the one sanctioned dark context in the light system
+// (mirrors the PWA's DarkPayScreen treatment). No shadows.
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
@@ -70,11 +71,11 @@ export function PulaCard({
 }
 
 const styles = StyleSheet.create({
-  // Gradient approximated as mid-point flat colour (#0D7A74) — native gradient
+  // Deep Pine flat surface (board: dark accent reserved for payment contexts)
   // requires react-native-linear-gradient; flat colour preserves the dark-teal
   // identity without adding a dependency.
   card: {
-    backgroundColor: '#0D7A74',
+    backgroundColor: colors.pine,
     borderRadius: radius.lg,
     padding: 20,
     overflow: 'hidden',

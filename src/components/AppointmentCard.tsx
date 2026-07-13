@@ -11,8 +11,8 @@ const STATUS_COLOR: Record<string, string> = {
   scheduled: colors.heroTeal,
   confirmed: colors.primaryTeal,
   completed: colors.textTertiary,
-  cancelled: '#991B1B',
-  pending: '#D97706',
+  cancelled: colors.dangerText,
+  pending: colors.warningText,
 };
 
 export function AppointmentCard({ appointment: appt }: Props) {

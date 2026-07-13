@@ -17,11 +17,12 @@ import { CoachScreen } from '../screens/CoachScreen';
 import { RewardsScreen } from '../screens/RewardsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { WalletScreen } from '../screens/WalletScreen';
-import { colors } from '../theme/tokens';
+import { colors, fonts } from '../theme/tokens';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
-// Raindrop logo — two overlapping teardrops + wordmark, matches Web PWA logo-on-dark.svg
+// Raindrop logo — two overlapping teardrops + wordmark. On-LIGHT lockup
+// (pine wordmark) for the white board header — was the logo-on-dark variant.
 function ToroLogo() {
   return (
     <Svg width={120} height={42} viewBox="0 0 160 56">
@@ -39,7 +40,7 @@ function ToroLogo() {
         fontFamily="Georgia, serif"
         fontWeight="700"
         fontSize="24"
-        fill="#ffffff"
+        fill="#0A302E"
       >
         TORO
       </SvgText>
@@ -135,15 +136,17 @@ export function RootNavigator() {
         },
         headerTintColor: colors.textPrimary,
         headerLeft: HeaderLogo,
-        tabBarActiveTintColor: colors.gold,
-        tabBarInactiveTintColor: 'rgba(212,168,67,0.5)',
+        // Board tab bar: white, hairline top border, Deep Pine active tint —
+        // gold is reserved for rewards semantics, never navigation (PWA rule).
+        tabBarActiveTintColor: colors.pine,
+        tabBarInactiveTintColor: colors.textTertiary,
         tabBarStyle: {
           backgroundColor: colors.toroInk,
-          borderTopColor: 'rgba(255,255,255,0.08)',
+          borderTopColor: colors.toroBorder,
           borderTopWidth: 1,
           paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
+        tabBarLabelStyle: { fontSize: 10, fontFamily: fonts.body500 },
         tabBarItemStyle: { paddingHorizontal: 0 },
         tabBarIcon: TAB_ICON_RENDERERS[route.name as keyof RootTabParamList],
       })}

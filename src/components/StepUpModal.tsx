@@ -123,7 +123,7 @@ export function StepUpModal({ visible, purpose, onClose, onVerified }: Props) {
 const s = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(10,48,46,0.45)', // pine-tinted backdrop (board overlay)
     justifyContent: 'center',
     padding: spacing.xl,
   },

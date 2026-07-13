@@ -27,7 +27,8 @@ export interface EngagementEventRequest {
   event_type: EventType;
   channel: Channel;
   raw_value?: string | number | null;
-  timestamp: string;
+  timestamp?: string;
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export interface EngagementEventResponse {
@@ -158,10 +159,13 @@ export interface ActivityWeek {
   checkins_this_cycle: number;
 }
 
+// Per-entry shape — matches GET /engagement/:id/activity-history exactly
+// (the earlier date/count/minutes shape had drifted from the backend).
 export interface ActivityHistoryEntry {
-  date: string;
-  count: number;
-  minutes: number;
+  event_id: string;
+  activity_type: string;
+  duration_minutes: number | null;
+  logged_at: string;
 }
 
 export interface ScreeningResult {

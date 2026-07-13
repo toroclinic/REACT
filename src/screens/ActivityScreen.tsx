@@ -1,4 +1,8 @@
-﻿import React, {
+// Activity — mirrors the PWA's ActivityScreen structure exactly:
+// stats row (streak + total sessions) → monthly calendar with the embedded
+// log form (board ActivityCalendar) → watch-sync card. The old week-dots +
+// separate History tab were replaced by the calendar, same as the PWA.
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -14,72 +18,34 @@ import {
   Linking,
   Platform,
   ScrollView,
-  FlatList,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuthStore } from '../store/authStore';
 import { useEngagementStore } from '../store/engagementStore';
 import { PricingApi } from '../services/api';
 import { ActivityHistoryEntry } from '../types/api';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, radius, spacing, typography } from '../theme/tokens';
+import { ActivityCalendar, StreakBadge } from '../components/board';
 import {
   isWatchSyncAvailable,
   syncWatchSessions,
 } from '../services/healthConnect';
 
-type ActivityTab = 'week' | 'history';
-
-const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
 const HEALTH_CONNECT_PLAY_URL =
   'https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata';
 
-function fmtActivityDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00');
-  if (isNaN(d.getTime())) {
-    return iso;
-  }
-  return d.toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
-}
-
-function groupByMonth(
-  entries: ActivityHistoryEntry[],
-): { month: string; entries: ActivityHistoryEntry[] }[] {
-  const groups: Map<string, ActivityHistoryEntry[]> = new Map();
-  for (const e of entries) {
-    const key = e.date.slice(0, 7); // YYYY-MM
-    if (!groups.has(key)) {
-      groups.set(key, []);
-    }
-    groups.get(key)!.push(e);
-  }
-  return Array.from(groups.entries())
-    .map(([month, es]) => ({
-      month: new Date(month + '-01').toLocaleDateString('en-GB', {
-        month: 'long',
-        year: 'numeric',
-      }),
-      entries: es,
-    }))
-    .reverse();
-}
-
 // Current streak: consecutive days with ≥1 check-in, ending today or
-// yesterday (so the streak survives until the member logs today).
-// Ported from the Web PWA, with its walk-start bug fixed: the walk begins
-// at yesterday when today has no entry yet, instead of always at today.
+// yesterday (so the streak survives until the member logs today). Same walk
+// as the PWA's computeStreak.
 function computeStreak(entries: ActivityHistoryEntry[]): number {
   if (entries.length === 0) {
     return 0;
   }
-  const days = new Set(entries.filter(e => e.count > 0).map(e => e.date));
+  const days = new Set(
+    entries.map(e => new Date(e.logged_at).toLocaleDateString('en-CA')),
+  );
   const cursor = new Date();
-  const todayKey = cursor.toLocaleDateString('en-CA');
-  if (!days.has(todayKey)) {
+  if (!days.has(cursor.toLocaleDateString('en-CA'))) {
     cursor.setDate(cursor.getDate() - 1);
     if (!days.has(cursor.toLocaleDateString('en-CA'))) {
       return 0;
@@ -98,11 +64,10 @@ function computeStreak(entries: ActivityHistoryEntry[]): number {
 
 export function ActivityScreen() {
   const memberId = useAuthStore(s => s.memberId);
-  const { profile, logEvent, refreshFromServer } = useEngagementStore();
+  const { profile, applyOptimisticUpdate, refreshFromServer } =
+    useEngagementStore();
 
-  const [tab, setTab] = useState<ActivityTab>('week');
   const [hcAvailable, setHcAvailable] = useState<boolean | null>(null); // null = checking
-  const [checkingIn, setCheckingIn] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const retryInFlight = useRef(false);
@@ -110,35 +75,26 @@ export function ActivityScreen() {
   const [activityHistory, setActivityHistory] = useState<
     ActivityHistoryEntry[]
   >([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   const loadActivityHistory = useCallback(async () => {
-    if (!memberId || historyLoaded) {
+    if (!memberId) {
       return;
     }
-    setLoadingHistory(true);
     try {
       const data = await PricingApi.getActivityHistory(memberId);
       setActivityHistory(data);
-      setHistoryLoaded(true);
     } catch {
-      /* silently fail */
-    } finally {
-      setLoadingHistory(false);
+      /* silently fail — calendar just shows no markers */
     }
-  }, [memberId, historyLoaded]);
+  }, [memberId]);
 
   useEffect(() => {
+    void loadActivityHistory();
     isWatchSyncAvailable()
       .then(setHcAvailable)
       .catch(() => setHcAvailable(false));
-  }, []);
+  }, [loadActivityHistory]);
 
-  const historyGroups = useMemo(
-    () => groupByMonth(activityHistory),
-    [activityHistory],
-  );
   const streak = useMemo(
     () => computeStreak(activityHistory),
     [activityHistory],
@@ -149,25 +105,15 @@ export function ActivityScreen() {
   }
 
   const checkins = profile.activity_checkins_this_cycle;
-  const todayIndex = (new Date().getDay() + 6) % 7;
 
-  const handleTabChange = (t: ActivityTab) => {
-    setTab(t);
-    if (t === 'history') {
-      void loadActivityHistory();
+  const onLogged = () => {
+    void applyOptimisticUpdate({
+      activity_checkins_this_cycle: checkins + 1,
+    });
+    if (memberId) {
+      void refreshFromServer(memberId);
     }
-  };
-
-  const logToday = async () => {
-    if (!memberId || checkingIn) {
-      return;
-    }
-    setCheckingIn(true);
-    try {
-      await logEvent(memberId, 'activity_checkin', profile.chronic_member);
-    } finally {
-      setCheckingIn(false);
-    }
+    void loadActivityHistory();
   };
 
   const syncFromWatch = async () => {
@@ -185,6 +131,7 @@ export function ActivityScreen() {
       );
       if (count > 0) {
         void refreshFromServer(memberId);
+        void loadActivityHistory();
       }
     } catch (e: any) {
       if (e?.message === 'permission_denied') {
@@ -218,450 +165,203 @@ export function ActivityScreen() {
 
   const isAndroid = Platform.OS === 'android';
 
-  const renderHistoryGroup = ({
-    item,
-  }: {
-    item: { month: string; entries: ActivityHistoryEntry[] };
-  }) => (
-    <View style={styles.historyGroup}>
-      <Text style={styles.historyMonth}>{item.month}</Text>
-      {item.entries.map(e => (
-        <View key={e.date} style={styles.historyRow}>
-          <View style={styles.historyDot} />
-          <View style={styles.historyRowContent}>
-            <Text style={styles.historyDate}>{fmtActivityDate(e.date)}</Text>
-            <Text style={styles.historyMeta}>
-              {e.count} check-in{e.count !== 1 ? 's' : ''}
-              {e.minutes > 0 ? ` · ${e.minutes} min` : ''}
-            </Text>
-          </View>
-          <Icon name="check-circle" size={16} color={colors.primaryTeal} />
-        </View>
-      ))}
-    </View>
-  );
-
   return (
-    <View style={styles.screen}>
-      {/* Tab selector */}
-      <View style={styles.tabStrip}>
-        <TouchableOpacity
-          style={[styles.tabBtn, tab === 'week' && styles.tabBtnActive]}
-          onPress={() => handleTabChange('week')}
-        >
-          <Text
-            style={[
-              styles.tabBtnText,
-              tab === 'week' && styles.tabBtnTextActive,
-            ]}
-          >
-            This week
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabBtn, tab === 'history' && styles.tabBtnActive]}
-          onPress={() => handleTabChange('history')}
-        >
-          <Text
-            style={[
-              styles.tabBtnText,
-              tab === 'history' && styles.tabBtnTextActive,
-            ]}
-          >
-            History
-          </Text>
-        </TouchableOpacity>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Text style={styles.title}>Activity</Text>
+      <Text style={styles.subtitle}>
+        {checkins} of 4 check-ins logged this cycle — extra days still build
+        your streak.
+      </Text>
+
+      {/* Streak + total sessions — same stats row as the PWA */}
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{streak}</Text>
+          {streak > 0 ? (
+            <StreakBadge days={streak} />
+          ) : (
+            <Text style={styles.statLabel}>day streak</Text>
+          )}
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{activityHistory.length}</Text>
+          <Text style={styles.statLabel}>total sessions</Text>
+        </View>
       </View>
 
-      {tab === 'history' ? (
-        loadingHistory ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={colors.primaryTeal} />
-          </View>
-        ) : (
-          <FlatList
-            style={styles.historyFlatList}
-            data={historyGroups}
-            keyExtractor={g => g.month}
-            renderItem={renderHistoryGroup}
-            contentContainerStyle={styles.historyList}
-            removeClippedSubviews
-            initialNumToRender={6}
-            maxToRenderPerBatch={4}
-            ListHeaderComponent={
-              activityHistory.length > 0 ? (
-                <View style={styles.streakCard}>
-                  <Text style={styles.streakEmoji}>
-                    {streak >= 7 ? '🔥' : streak >= 3 ? '⚡' : '🌱'}
-                  </Text>
-                  <View>
-                    <Text style={styles.streakValue}>
-                      {streak} day{streak !== 1 ? 's' : ''}
-                    </Text>
-                    <Text style={styles.streakLabel}>
-                      {streak > 0
-                        ? 'Current streak — keep it going!'
-                        : 'Log an activity today to start a streak'}
-                    </Text>
-                  </View>
-                </View>
-              ) : null
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyIcon}>🏃</Text>
-                <Text style={styles.emptyTitle}>No activity history yet</Text>
-                <Text style={styles.emptyBody}>
-                  Start logging activity to build your history.
-                </Text>
-              </View>
-            }
-          />
-        )
-      ) : (
-        <ScrollView
-          style={styles.scrollArea}
-          contentContainerStyle={styles.content}
-        >
-          <Text style={styles.title}>This week's activity</Text>
-          <Text style={styles.subtitle}>
-            {checkins} of 4 check-ins logged this cycle — extra days still build
-            your streak.
-          </Text>
+      {/* Monthly calendar — with embedded log form */}
+      {memberId ? (
+        <ActivityCalendar
+          history={activityHistory}
+          memberId={memberId}
+          onLogged={onLogged}
+        />
+      ) : null}
 
-          {/* 7-day grid */}
-          <View style={styles.weekRow} accessible={false}>
-            {DAY_LABELS.map((label, i) => {
-              const on = i < checkins;
-              const isToday = i === todayIndex;
-              const dayName = [
-                'Monday',
-                'Tuesday',
-                'Wednesday',
-                'Thursday',
-                'Friday',
-                'Saturday',
-                'Sunday',
-              ][i];
-              return (
-                <View
-                  key={i}
-                  style={styles.dayColumn}
-                  accessible
-                  accessibilityLabel={`${dayName}: ${
-                    on
-                      ? 'logged'
-                      : isToday
-                      ? 'today, not yet logged'
-                      : 'not logged'
-                  }`}
-                >
-                  <View
-                    style={[
-                      styles.dot,
-                      on && styles.dotOn,
-                      isToday && !on && styles.dotToday,
-                    ]}
-                  >
-                    {on && <Icon name="check" size={16} color={colors.white} />}
-                    {isToday && !on && (
-                      <Icon
-                        name="circle-medium"
-                        size={16}
-                        color={colors.primaryTeal}
-                      />
-                    )}
-                  </View>
-                  <Text
-                    style={[styles.dayLabel, isToday && styles.dayLabelToday]}
-                  >
-                    {label}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
+      {/* Watch sync card */}
+      <View style={styles.watchCard}>
+        <View style={styles.watchCardHeader}>
+          <Icon name="watch-variant" size={20} color={colors.primaryTeal} />
+          <Text style={styles.watchCardTitle}>Sync from watch</Text>
+        </View>
+        <Text style={styles.watchCardBody}>
+          {isAndroid
+            ? 'Automatically import workouts, SpO₂ readings, and sleep data from Wear OS, Galaxy Watch, Fitbit, or Garmin via Health Connect.'
+            : 'Automatically import workouts, SpO₂, and sleep from Apple Watch via HealthKit.'}
+        </Text>
 
-          {/* Manual check-in */}
+        {/* Checking availability */}
+        {hcAvailable === null && (
+          <View style={styles.checkingRow}>
+            <ActivityIndicator size="small" color={colors.primaryTeal} />
+            <Text style={styles.checkingText}>Checking availability…</Text>
+          </View>
+        )}
+
+        {/* Available — show sync button */}
+        {hcAvailable === true && (
           <TouchableOpacity
-            style={[styles.logBtn, checkingIn && styles.logBtnDisabled]}
-            onPress={logToday}
-            disabled={checkingIn}
+            style={[styles.syncBtn, syncing && styles.syncBtnDisabled]}
+            onPress={syncFromWatch}
+            disabled={syncing}
             accessibilityRole="button"
-            accessibilityLabel="Log today's physical activity"
-            accessibilityHint="Adds one activity check-in for today"
-            accessibilityState={{ busy: checkingIn }}
+            accessibilityLabel={
+              syncing ? 'Syncing from watch' : 'Sync workouts from watch'
+            }
+            accessibilityHint="Imports recent sessions from Health Connect"
+            accessibilityState={{ disabled: syncing }}
           >
-            {checkingIn ? (
+            {syncing ? (
               <ActivityIndicator size="small" color={colors.white} />
             ) : (
-              <Icon name="plus-circle-outline" size={18} color={colors.white} />
+              <Icon name="sync" size={16} color={colors.white} />
             )}
-            <Text style={styles.logBtnText}>
-              {checkingIn ? 'Logging…' : "Log today's activity"}
+            <Text style={styles.syncBtnText}>
+              {syncing ? 'Syncing…' : 'Sync now'}
             </Text>
           </TouchableOpacity>
+        )}
 
-          {/* Watch sync card — always visible */}
-          <View style={styles.watchCard}>
-            <View style={styles.watchCardHeader}>
-              <Icon name="watch-variant" size={20} color={colors.primaryTeal} />
-              <Text style={styles.watchCardTitle}>Sync from watch</Text>
-            </View>
-            <Text style={styles.watchCardBody}>
-              {isAndroid
-                ? 'Automatically import workouts, SpO₂ readings, and sleep data from Wear OS, Galaxy Watch, Fitbit, or Garmin via Health Connect.'
-                : 'Automatically import workouts, SpO₂, and sleep from Apple Watch via HealthKit.'}
+        {/* Android: Health Connect not installed */}
+        {hcAvailable === false && isAndroid && (
+          <View style={styles.unavailableBox}>
+            <Text style={styles.unavailableText}>
+              Health Connect is not installed on this device. Install it from
+              the Play Store, then come back and sync.
             </Text>
-
-            {/* Checking availability */}
-            {hcAvailable === null && (
-              <View style={styles.checkingRow}>
-                <ActivityIndicator size="small" color={colors.primaryTeal} />
-                <Text style={styles.checkingText}>Checking availability…</Text>
-              </View>
-            )}
-
-            {/* Available — show sync button */}
-            {hcAvailable === true && (
+            <View style={styles.unavailableActions}>
               <TouchableOpacity
-                style={[styles.syncBtn, syncing && styles.syncBtnDisabled]}
-                onPress={syncFromWatch}
-                disabled={syncing}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  syncing ? 'Syncing from watch' : 'Sync workouts from watch'
-                }
-                accessibilityHint="Imports recent sessions from Health Connect"
-                accessibilityState={{ disabled: syncing }}
+                style={styles.installBtn}
+                onPress={openHealthConnect}
               >
-                {syncing ? (
-                  <ActivityIndicator size="small" color={colors.white} />
-                ) : (
-                  <Icon name="sync" size={16} color={colors.white} />
-                )}
-                <Text style={styles.syncBtnText}>
-                  {syncing ? 'Syncing…' : 'Sync now'}
+                <Icon name="google-play" size={14} color={colors.white} />
+                <Text style={styles.installBtnText}>
+                  Install Health Connect
                 </Text>
               </TouchableOpacity>
-            )}
-
-            {/* Android: Health Connect not installed */}
-            {hcAvailable === false && isAndroid && (
-              <View style={styles.unavailableBox}>
-                <Text style={styles.unavailableText}>
-                  Health Connect is not installed on this device. Install it
-                  from the Play Store, then come back and sync.
-                </Text>
-                <View style={styles.unavailableActions}>
-                  <TouchableOpacity
-                    style={styles.installBtn}
-                    onPress={openHealthConnect}
-                  >
-                    <Icon name="google-play" size={14} color={colors.white} />
-                    <Text style={styles.installBtnText}>
-                      Install Health Connect
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.retryBtn}
-                    onPress={retryAvailability}
-                  >
-                    <Text style={styles.retryBtnText}>I've installed it →</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* iOS: HealthKit always available but shown just in case */}
-            {hcAvailable === false && !isAndroid && (
-              <View style={styles.unavailableBox}>
-                <Text style={styles.unavailableText}>
-                  HealthKit is not available on this device. This feature
-                  requires iOS 13+ on a physical iPhone.
-                </Text>
-              </View>
-            )}
-
-            {/* Sync result message */}
-            {syncResult && (
-              <View
-                style={[
-                  styles.resultBox,
-                  syncResult.includes('denied') || syncResult.includes('failed')
-                    ? styles.resultBoxError
-                    : styles.resultBoxSuccess,
-                ]}
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={retryAvailability}
               >
-                <Icon
-                  name={
-                    syncResult.includes('denied') ||
-                    syncResult.includes('failed')
-                      ? 'alert-circle-outline'
-                      : 'check-circle-outline'
-                  }
-                  size={14}
-                  color={
-                    syncResult.includes('denied') ||
-                    syncResult.includes('failed')
-                      ? '#DC2626'
-                      : '#16A34A'
-                  }
-                />
-                <Text
-                  style={[
-                    styles.resultText,
-                    syncResult.includes('denied') ||
-                    syncResult.includes('failed')
-                      ? styles.resultTextError
-                      : styles.resultTextSuccess,
-                  ]}
-                >
-                  {syncResult}
-                </Text>
-              </View>
-            )}
-
-            {/* Supported devices list */}
-            <View style={styles.supportedRow}>
-              <Icon
-                name="information-outline"
-                size={12}
-                color={colors.textTertiary}
-              />
-              <Text style={styles.supportedText}>
-                {isAndroid
-                  ? 'Supports Wear OS, Samsung Galaxy Watch, Fitbit, Garmin'
-                  : 'Supports Apple Watch Series 1+'}
-              </Text>
+                <Text style={styles.retryBtnText}>I've installed it →</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      )}
-    </View>
+        )}
+
+        {/* iOS: HealthKit always available but shown just in case */}
+        {hcAvailable === false && !isAndroid && (
+          <View style={styles.unavailableBox}>
+            <Text style={styles.unavailableText}>
+              HealthKit is not available on this device. This feature requires
+              iOS 13+ on a physical iPhone.
+            </Text>
+          </View>
+        )}
+
+        {/* Sync result message */}
+        {syncResult && (
+          <View
+            style={[
+              styles.resultBox,
+              syncResult.includes('denied') || syncResult.includes('failed')
+                ? styles.resultBoxError
+                : styles.resultBoxSuccess,
+            ]}
+          >
+            <Icon
+              name={
+                syncResult.includes('denied') || syncResult.includes('failed')
+                  ? 'alert-circle-outline'
+                  : 'check-circle-outline'
+              }
+              size={14}
+              color={
+                syncResult.includes('denied') || syncResult.includes('failed')
+                  ? colors.dangerText
+                  : colors.successText
+              }
+            />
+            <Text
+              style={[
+                styles.resultText,
+                syncResult.includes('denied') || syncResult.includes('failed')
+                  ? styles.resultTextError
+                  : styles.resultTextSuccess,
+              ]}
+            >
+              {syncResult}
+            </Text>
+          </View>
+        )}
+
+        {/* Supported devices list */}
+        <View style={styles.supportedRow}>
+          <Icon
+            name="information-outline"
+            size={12}
+            color={colors.textTertiary}
+          />
+          <Text style={styles.supportedText}>
+            {isAndroid
+              ? 'Supports Wear OS, Samsung Galaxy Watch, Fitbit, Garmin'
+              : 'Supports Apple Watch Series 1+'}
+          </Text>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.screenBg },
-  scrollArea: { flex: 1 },
   content: {
     padding: spacing.lg + 2,
     paddingBottom: spacing.xl * 2,
     gap: spacing.lg,
   },
 
-  // Tab strip
-  tabStrip: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.screenBg,
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-    marginBottom: -1,
-  },
-  tabBtnActive: { borderBottomColor: colors.primaryTeal },
-  tabBtnText: { ...typography.bodySmall, color: colors.textSecondary },
-  tabBtnTextActive: { color: colors.primaryTeal, fontWeight: '600' as const },
-
-  // History tab
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  historyFlatList: { flex: 1 },
-  streakCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surfaceNeutral,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  streakEmoji: { fontSize: 28 },
-  streakValue: {
-    ...typography.h2,
-    color: colors.textPrimary,
-    fontWeight: '700' as const,
-  },
-  streakLabel: { ...typography.caption, color: colors.textTertiary },
-  historyList: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl * 2,
-    gap: spacing.lg,
-  },
-  historyGroup: { gap: spacing.sm },
-  historyMonth: {
-    ...typography.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.border,
-  },
-  historyDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primaryTeal,
-  },
-  historyRowContent: { flex: 1 },
-  historyDate: { ...typography.bodySmall, color: colors.textPrimary },
-  historyMeta: { ...typography.caption, color: colors.textTertiary },
-  emptyWrap: { alignItems: 'center', paddingTop: spacing.xl * 3 },
-  emptyIcon: { fontSize: 40, marginBottom: spacing.md },
-  emptyTitle: {
-    ...typography.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  emptyBody: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-
   title: { ...typography.h1, color: colors.textPrimary },
   subtitle: { ...typography.bodySmall, color: colors.textSecondary },
 
-  weekRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  dayColumn: { alignItems: 'center', gap: spacing.xs + 2 },
-  dot: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  // Stats row — streak + total sessions (PWA .activity-stats-row)
+  statsRow: { flexDirection: 'row', gap: spacing.sm },
+  statCard: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
     backgroundColor: colors.surfaceNeutral,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.toroBorder,
+    paddingVertical: spacing.lg,
   },
-  dotOn: { backgroundColor: colors.primaryTeal },
-  dotToday: { borderWidth: 2, borderColor: colors.primaryTeal },
-  dayLabel: { ...typography.caption, color: colors.textTertiary },
-  dayLabelToday: { color: colors.primaryTeal, fontWeight: '600' },
-
-  logBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primaryTeal,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md + 2,
-    minHeight: 50,
+  statValue: {
+    fontSize: 26,
+    fontFamily: fonts.display700,
+    color: colors.textPrimary,
   },
-  logBtnDisabled: { opacity: 0.6 },
-  logBtnText: { ...typography.body, fontWeight: '600', color: colors.white },
+  statLabel: { ...typography.caption, color: colors.textTertiary },
 
   watchCard: {
     borderWidth: 1,
@@ -717,7 +417,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs + 2,
-    backgroundColor: colors.toroInk,
+    backgroundColor: colors.pine, // dark action button (white text) on light UI
     borderRadius: radius.md,
     paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,

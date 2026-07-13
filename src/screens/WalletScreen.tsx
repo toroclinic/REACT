@@ -843,7 +843,7 @@ const styles = StyleSheet.create({
   },
   balanceAmount: {
     fontSize: 42,
-    fontWeight: '700',
+    fontFamily: 'SpaceGrotesk-Bold', // board display type for balances
     color: colors.white,
     letterSpacing: -1,
     marginBottom: spacing.lg,

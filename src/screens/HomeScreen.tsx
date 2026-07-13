@@ -30,7 +30,7 @@ import { getCachedMemberProfile } from '../services/cache';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { MessagesApi, MemberApi } from '../services/api';
 import { Appointment, HealthAlert } from '../types/api';
-import { colors, spacing, typography, radius } from '../theme/tokens';
+import { colors, spacing, typography, radius, fonts } from '../theme/tokens';
 import { RootTabParamList } from '../navigation/types';
 
 interface Props {
@@ -343,19 +343,22 @@ export function HomeScreen({ navigation }: Props) {
                 badge: unreadCount,
               },
               {
+                // Pine accent — gold is reserved for rewards semantics, and
+                // the coach is not a reward.
                 screen: 'Coach',
                 icon: 'robot-outline',
                 label: 'Tora AI',
-                accent: colors.gold,
-                bg: colors.goldLight,
+                accent: colors.pine,
+                bg: colors.mintWash,
                 badge: 0,
               },
               {
+                // Gold IS correct here: Rewards is the gold-semantics surface.
                 screen: 'Rewards',
                 icon: 'gift-outline',
                 label: 'Rewards',
-                accent: colors.primaryTeal,
-                bg: colors.primaryTealLight,
+                accent: colors.goldText,
+                bg: colors.goldLight,
                 badge: 0,
               },
             ] as const
@@ -529,11 +532,14 @@ const styles = StyleSheet.create({
   skeletonRowFirst: { height: 56, marginTop: spacing.md },
   skeletonRow: { height: 56, marginTop: spacing.sm },
 
-  // Hero band — matches PWA .home-hero-band: primaryTeal bg, 18px h-padding
+  // Hero band — board HeroHeaderCard treatment: teal bg, rounded-BOTTOM
+  // corners (radius.hero) so it reads as page chrome. Matches PWA.
   heroBand: {
     backgroundColor: colors.primaryTeal,
     paddingHorizontal: 18,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderBottomLeftRadius: radius.hero,
+    borderBottomRightRadius: radius.hero,
   },
   heroStatus: {
     flexDirection: 'row',
@@ -571,23 +577,24 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: colors.white, fontSize: 9, fontWeight: '700' as const },
   heroGreeting: {
-    fontSize: 15,
-    fontWeight: '700' as const,
+    fontSize: 16,
+    fontFamily: fonts.display500,
     color: 'rgba(255,255,255,0.92)',
     marginBottom: 10,
   },
+  // Mono eyebrow — board section-label pattern (IBM Plex Mono, tracked caps)
   heroLabel: {
     fontSize: 10,
-    fontWeight: '700' as const,
+    fontFamily: fonts.mono500,
     letterSpacing: 2.4,
     color: 'rgba(255,255,255,0.65)',
     marginBottom: 5,
     textTransform: 'uppercase',
   },
-  // Balance font — bumped from 32/700 to 36/800 to match PWA
+  // Big figure — Space Grotesk Bold (board display type)
   heroBalance: {
     fontSize: 36,
-    fontWeight: '800' as const,
+    fontFamily: fonts.display700,
     color: colors.white,
     marginBottom: spacing.sm,
     letterSpacing: -0.5,
@@ -640,7 +647,7 @@ const styles = StyleSheet.create({
   alertDetail: { ...typography.caption },
   alertCallBtn: {
     marginTop: spacing.sm,
-    backgroundColor: '#B91C1C',
+    backgroundColor: colors.emergencyRed, // true emergency context — sanctioned use
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     alignItems: 'center',
@@ -651,20 +658,13 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
 
-  // Breakdown card — white surface with teal-tinted border
+  // Breakdown card — hairline white card (board: no shadows)
   breakdownCard: {
     backgroundColor: colors.surfaceNeutral,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.toroBorder,
     padding: spacing.md,
-    ...{
-      elevation: 2,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.06,
-      shadowRadius: 6,
-    },
   },
   breakdownHeader: {
     flexDirection: 'row',
@@ -763,13 +763,13 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
 
-  // Section label — matches PWA .section-label: 11px 700 uppercase muted
+  // Section label — board mono eyebrow (IBM Plex Mono, tracked caps)
   sectionLabel: {
     fontSize: 11,
-    fontWeight: '700' as const,
+    fontFamily: fonts.mono500,
     color: colors.textTertiary,
     textTransform: 'uppercase',
-    letterSpacing: 0.9,
+    letterSpacing: 1.3,
   },
   taskList: { gap: spacing.sm },
   allDoneCard: {
@@ -782,7 +782,7 @@ const styles = StyleSheet.create({
     borderColor: colors.toroBorder,
   },
   allDoneIcon: { fontSize: 32 },
-  allDoneTitle: { ...typography.h3, color: colors.toroInk },
+  allDoneTitle: { ...typography.h3, color: colors.textPrimary },
   allDoneBody: {
     ...typography.bodySmall,
     color: colors.textSecondary,

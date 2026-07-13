@@ -54,10 +54,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.surfaceNeutral,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.toroBorder,
     gap: spacing.sm + 2,
-    ...elevation.card,
+    ...elevation.card, // hairline border + zero elevation (board: no shadows)
   },
   iconWrap: {
     width: 32,

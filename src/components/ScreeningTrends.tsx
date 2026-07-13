@@ -427,7 +427,9 @@ export function ScreeningTrends({ history }: Props) {
         yMax={200}
         datasets={[
           { label: 'Systolic', dataKey: 'systolic', color: colors.dangerText },
-          { label: 'Diastolic', dataKey: 'diastolic', color: '#93C5FD' },
+          // Data-viz series hues (not brand chrome — same exception as the
+          // map pin): darkened for legibility on the light Paper background.
+          { label: 'Diastolic', dataKey: 'diastolic', color: '#3B82C4' },
         ]}
       />
       <TrendChart
@@ -447,7 +449,7 @@ export function ScreeningTrends({ history }: Props) {
         eventType="cholesterol_screening"
         points={cholPoints}
         datasets={[
-          { label: 'Total', dataKey: 'total', color: '#D8B4FE' },
+          { label: 'Total', dataKey: 'total', color: '#8B5FBF' },
           { label: 'HDL', dataKey: 'hdl', color: colors.successText },
           { label: 'LDL', dataKey: 'ldl', color: colors.dangerText },
         ]}
@@ -459,7 +461,7 @@ export function ScreeningTrends({ history }: Props) {
         points={bmiPoints}
         yMin={10}
         yMax={45}
-        datasets={[{ label: 'BMI', dataKey: 'bmi', color: '#FDBA74' }]}
+        datasets={[{ label: 'BMI', dataKey: 'bmi', color: '#B45309' }]}
       />
     </View>
   );

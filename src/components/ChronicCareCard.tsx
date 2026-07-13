@@ -15,8 +15,8 @@ interface Props {
 }
 
 const URGENCY_COLOR: Record<string, string> = {
-  overdue: '#B91C1C',
-  due_soon: '#D97706',
+  overdue: colors.dangerText,
+  due_soon: colors.warningText,
   upcoming: colors.heroTeal,
 };
 
