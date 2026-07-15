@@ -348,3 +348,30 @@ export interface CachedEngagementProfile {
   points_to_next_tier?: number;
   scheme_config?: SchemePricingConfig;
 }
+
+// ---- Care protocols (scheduled tests + facility-attested completion) ----
+
+export interface ScheduledTestView {
+  scheduled_test_id: string;
+  test_type: string;
+  label: string;
+  due_date: string;
+  status:
+    | 'upcoming'
+    | 'due'
+    | 'grace'
+    | 'overdue'
+    | 'completed_verified'
+    | 'expired';
+  completed_at: string | null;
+  completed_on_time: boolean | null;
+}
+
+export interface CompletionCodeIssue {
+  code: string;
+  expires_at: string;
+  valid_minutes: number;
+  test_label: string;
+  credit_preview_pula: number;
+  on_time: boolean;
+}

@@ -24,6 +24,8 @@ import {
   MemberReminder,
   MedicalAidScheme,
   ChronicCareVisit,
+  ScheduledTestView,
+  CompletionCodeIssue,
   DailyTasks,
   CoachMessage,
   WalletBalance,
@@ -531,6 +533,19 @@ export const RemindersApi = {
 export const ChronicCareApi = {
   getVisits: (memberId: string) =>
     request<ChronicCareVisit[]>(`/chronic-care/${memberId}/visits`),
+};
+
+// ---- Care protocols (scheduled tests + completion codes) ----
+
+export const CareProtocolApi = {
+  getTests: (memberId: string) =>
+    request<ScheduledTestView[]>(`/care-protocols/${memberId}/tests`),
+
+  getCompletionCode: (memberId: string, scheduledTestId: string) =>
+    request<CompletionCodeIssue>(
+      `/care-protocols/${memberId}/tests/${scheduledTestId}/completion-code`,
+      { method: 'POST' },
+    ),
 };
 
 // ---- Coach (Tora AI) ----

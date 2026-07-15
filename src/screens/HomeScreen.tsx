@@ -23,6 +23,7 @@ import { TierProgressBar } from '../components/TierProgressBar';
 import { TaskRow } from '../components/TaskRow';
 import { DailyTasksCard } from '../components/DailyTasksCard';
 import { ChronicCareCard } from '../components/ChronicCareCard';
+import { CareProtocolCard } from '../components/CareProtocolCard';
 import { AppointmentCard } from '../components/AppointmentCard';
 import { RemindersCard } from '../components/RemindersCard';
 import { computeTasks } from '../services/pricingMirror';
@@ -460,6 +461,9 @@ export function HomeScreen({ navigation }: Props) {
         {memberId && profile.chronic_member && (
           <ChronicCareCard memberId={memberId} />
         )}
+
+        {/* ── Scheduled lab tests + completion codes (null unless enrolled) ── */}
+        {memberId && <CareProtocolCard memberId={memberId} />}
 
         {/* ── Reminders ── */}
         {memberId && <RemindersCard memberId={memberId} />}
