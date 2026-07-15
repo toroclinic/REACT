@@ -49,6 +49,17 @@ export function EnrollmentScreen() {
       await PinAuthApi.enrollStart(normalizedPhone());
       setStep('otp');
     } catch (e) {
+      // Unregistered number: route straight into registration instead of a
+      // dead end (backend answers not_registered explicitly since 2026-07-15;
+      // previously it silently returned ok and members waited for an SMS
+      // that never came).
+      if (e instanceof ApiError && e.body?.not_registered === true) {
+        setError(
+          'This number is not registered yet — set up your account below.',
+        );
+        setStep('register');
+        return;
+      }
       setError(
         e instanceof ApiError ? e.message : 'Could not send a code. Try again.',
       );
