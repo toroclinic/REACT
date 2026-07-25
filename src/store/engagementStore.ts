@@ -20,6 +20,7 @@ interface EngagementState {
     eventType: EventType,
     chronicMember: boolean,
     rawValue?: string,
+    evidenceDataUrl?: string,
   ) => Promise<void>;
   applyOptimisticUpdate: (
     patch: Partial<CachedEngagementProfile>,
@@ -86,7 +87,13 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
     }
   },
 
-  logEvent: async (memberId, eventType, chronicMember, rawValue?) => {
+  logEvent: async (
+    memberId,
+    eventType,
+    chronicMember,
+    rawValue?,
+    evidenceDataUrl?,
+  ) => {
     const current = get().profile ?? {
       ...FALLBACK_PROFILE,
       chronic_member: chronicMember,
@@ -119,12 +126,15 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
     set({ profile: next });
     await cacheEngagementProfile(next);
 
-    await enqueueEngagementEvent({
-      member_id: memberId,
-      event_type: eventType,
-      channel: 'app',
-      ...(rawValue != null ? { raw_value: rawValue } : {}),
-    });
+    await enqueueEngagementEvent(
+      {
+        member_id: memberId,
+        event_type: eventType,
+        channel: 'app',
+        ...(rawValue != null ? { raw_value: rawValue } : {}),
+      },
+      evidenceDataUrl,
+    );
   },
 
   applyOptimisticUpdate: async patch => {

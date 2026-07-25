@@ -10,7 +10,15 @@ import {
   Platform,
   ScrollView,
   FlatList,
+  Alert,
+  Image,
 } from 'react-native';
+import {
+  launchCamera,
+  launchImageLibrary,
+  type ImagePickerResponse,
+  type CameraOptions,
+} from 'react-native-image-picker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreeningTrends } from '../components/ScreeningTrends';
 import { useAuthStore } from '../store/authStore';
@@ -277,6 +285,15 @@ export function ScreeningScreen() {
   const [submitting, setSubmitting] = useState<ScreeningKey | null>(null);
   const [submitted, setSubmitted] = useState<Set<ScreeningKey>>(new Set());
 
+  // Result-slip photo for the card currently being filled in. Unlike the PWA
+  // — which posts the screening, gets an event_id back, and only then offers
+  // to attach — this app queues events offline, so no event_id exists until
+  // the queue flushes. The photo is therefore captured BEFORE saving and
+  // rides the queue with its event (see offlineQueue.evidenceDataUrl).
+  const [slipPhoto, setSlipPhoto] = useState<string | null>(null);
+  const [pickingPhoto, setPickingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+
   const [history, setHistory] = useState<ScreeningHistoryEntry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -421,6 +438,69 @@ export function ScreeningScreen() {
     return false;
   };
 
+  // Downscaling happens in the picker itself (maxWidth/maxHeight/quality), so
+  // a 1.5-6MB camera photo becomes ~150KB before it ever hits memory — the
+  // native equivalent of the PWA's canvas resize. includeBase64 gives us the
+  // data URL directly, with no filesystem dependency to manage or clean up.
+  const PICKER_OPTIONS: CameraOptions = {
+    mediaType: 'photo',
+    maxWidth: 1200,
+    maxHeight: 1200,
+    quality: 0.7,
+    includeBase64: true,
+    saveToPhotos: false,
+  };
+
+  const handlePickerResult = (res: ImagePickerResponse) => {
+    if (res.didCancel) {
+      return;
+    }
+    if (res.errorCode) {
+      setPhotoError(
+        res.errorCode === 'permission'
+          ? 'Camera permission is needed to photograph your slip.'
+          : res.errorMessage ?? "Couldn't get that photo. Please try again.",
+      );
+      return;
+    }
+    const asset = res.assets?.[0];
+    if (!asset?.base64) {
+      setPhotoError("Couldn't read that photo. Please try again.");
+      return;
+    }
+    setSlipPhoto(`data:${asset.type ?? 'image/jpeg'};base64,${asset.base64}`);
+  };
+
+  const attachSlipPhoto = () => {
+    if (pickingPhoto) {
+      return;
+    }
+    setPhotoError('');
+    Alert.alert('Attach result slip', 'Add a photo of your result slip.', [
+      {
+        text: 'Take photo',
+        onPress: () => {
+          setPickingPhoto(true);
+          void launchCamera(PICKER_OPTIONS, res => {
+            handlePickerResult(res);
+            setPickingPhoto(false);
+          });
+        },
+      },
+      {
+        text: 'Choose from gallery',
+        onPress: () => {
+          setPickingPhoto(true);
+          void launchImageLibrary(PICKER_OPTIONS, res => {
+            handlePickerResult(res);
+            setPickingPhoto(false);
+          });
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const logResult = async (key: ScreeningKey) => {
     if (!memberId) {
       return;
@@ -432,9 +512,12 @@ export function ScreeningScreen() {
         SCREENING_META[key].eventType,
         profile.chronic_member,
         buildRawValue(key),
+        slipPhoto ?? undefined,
       );
       setSubmitted(prev => new Set(prev).add(key));
       setActiveKey(null);
+      setSlipPhoto(null);
+      setPhotoError('');
       if (key === 'bp') {
         setBpSys('');
         setBpDia('');
@@ -887,6 +970,55 @@ export function ScreeningScreen() {
                 {isActive && !done && (
                   <View style={styles.expanded}>
                     {renderInputs(key)}
+
+                    {/* Result-slip photo — optional, speeds up clinic
+                        confirmation because staff can check the slip against
+                        the typed reading. */}
+                    {slipPhoto ? (
+                      <View style={styles.slipAttached}>
+                        <Image
+                          source={{ uri: slipPhoto }}
+                          style={styles.slipThumb}
+                        />
+                        <Text style={styles.slipAttachedText}>
+                          Result slip attached
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => setSlipPhoto(null)}
+                          accessibilityRole="button"
+                          accessibilityLabel="Remove attached result slip"
+                        >
+                          <Icon
+                            name="close-circle-outline"
+                            size={20}
+                            color={colors.textSecondary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.slipBtn}
+                        onPress={attachSlipPhoto}
+                        disabled={pickingPhoto}
+                        accessibilityRole="button"
+                        accessibilityLabel="Attach a photo of your result slip"
+                      >
+                        <Icon
+                          name="paperclip"
+                          size={16}
+                          color={colors.primaryTeal}
+                        />
+                        <Text style={styles.slipBtnText}>
+                          {pickingPhoto
+                            ? 'Opening…'
+                            : 'Attach result slip photo (optional)'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    {photoError !== '' && (
+                      <Text style={styles.slipError}>{photoError}</Text>
+                    )}
+
                     <View style={styles.actions}>
                       <TouchableOpacity
                         style={[
@@ -1182,6 +1314,47 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceNeutral,
   },
   clinicBtnText: { ...typography.bodySmall, color: colors.primaryTeal },
+  slipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs + 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceNeutral,
+  },
+  slipBtnText: { ...typography.bodySmall, color: colors.primaryTeal },
+  slipAttached: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primaryTeal,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceNeutral,
+  },
+  slipThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.white,
+  },
+  slipAttachedText: {
+    ...typography.bodySmall,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  slipError: {
+    ...typography.caption,
+    color: colors.dangerText,
+    marginBottom: spacing.sm,
+  },
   clinicList: { gap: spacing.xs + 2 },
   clinicRow: {
     flexDirection: 'row',

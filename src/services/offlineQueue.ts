@@ -21,6 +21,13 @@ export interface QueuedEvent {
   event: EngagementEventRequest;
   enqueuedAt: string;
   attempts: number;
+  // Optional photo of the member's result slip, captured at log time and
+  // carried until the event itself syncs. The event_id needed to attach it
+  // doesn't exist until the backend accepts the event, so the photo has to
+  // wait here rather than upload independently. Kept as a downscaled base64
+  // data URL (~150KB) — small enough for AsyncStorage, and it means a member
+  // can photograph a slip with no signal at all and have it land later.
+  evidenceDataUrl?: string;
 }
 
 function generateLocalId(): string {
@@ -48,12 +55,14 @@ async function writeQueue(queue: QueuedEvent[]): Promise<void> {
 // so the UI can optimistically update without waiting on the network.
 export async function enqueueEngagementEvent(
   event: Omit<EngagementEventRequest, 'timestamp'>,
+  evidenceDataUrl?: string,
 ): Promise<QueuedEvent> {
   const queued: QueuedEvent = {
     localId: generateLocalId(),
     event: { ...event, timestamp: new Date().toISOString() },
     enqueuedAt: new Date().toISOString(),
     attempts: 0,
+    ...(evidenceDataUrl ? { evidenceDataUrl } : {}),
   };
   const queue = await readQueue();
   queue.push(queued);
@@ -115,7 +124,27 @@ export async function flushQueue(): Promise<void> {
         // wiring existed, but it didn't. Without it, a retried submission
         // after a dropped connection (exactly the case this queue exists
         // for) double-counted the scored check-in.
-        await PricingApi.submitEvent(item.event, item.localId);
+        const accepted = await PricingApi.submitEvent(item.event, item.localId);
+
+        // The response's event_id was previously discarded. It's the only
+        // handle on the stored event, so a result-slip photo can't be
+        // attached without it.
+        if (item.evidenceDataUrl && accepted.event_id) {
+          try {
+            await PricingApi.attachEvidence(
+              accepted.event_id,
+              item.evidenceDataUrl,
+            );
+          } catch {
+            // The screening itself is safely recorded — that's what protects
+            // the member's credit. Losing the optional photo must never send
+            // the event back through the queue and risk re-submitting it.
+            console.warn(
+              '[offlineQueue] evidence upload failed, event kept',
+              item.localId,
+            );
+          }
+        }
       } catch {
         remaining.push({ ...item, attempts: item.attempts + 1 });
       }

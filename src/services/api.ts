@@ -386,18 +386,19 @@ export const PricingApi = {
       `/engagement/${memberId}/screening-history`,
     ),
 
-  attachEvidence: async (eventId: string, formData: FormData) => {
-    const token = await getAccessToken();
-    const r = await fetch(
-      `${API_BASE_URL}/engagement/event/${eventId}/evidence`,
-      {
-        method: 'PATCH',
-        body: formData,
-        headers: { Authorization: `Bearer ${token ?? ''}` },
-      },
-    );
-    return r.json() as Promise<{ ok: boolean }>;
-  },
+  // Attach a photo of the member's result slip so clinic staff can check it
+  // against the typed reading before confirming.
+  //
+  // Sends JSON, not multipart: the backend mounts only express.json()/
+  // urlencoded() and has no multipart parser, so the FormData this used to
+  // send could never have been read. (Nothing called it, so the broken
+  // contract was never observed.) evidenceUrl is a base64 data: URL,
+  // downscaled by the caller — the endpoint caps the size server-side.
+  attachEvidence: (eventId: string, evidenceUrl: string) =>
+    request<{ updated: boolean; event_id: string }>(
+      `/engagement/event/${eventId}/evidence`,
+      { method: 'PATCH', body: { evidence_url: evidenceUrl } },
+    ),
 };
 
 // ---- Member profile ----
