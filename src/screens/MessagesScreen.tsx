@@ -12,6 +12,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { MessagesApi, RemindersApi } from '../services/api';
+import { daysFromToday, parseServerDate } from '../services/datetime';
 import {
   MemberMessage,
   MemberReminder,
@@ -76,25 +77,29 @@ const URGENCY_CONFIG: Record<
 };
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
-  if (diffDays === 0) {
+  const d = parseServerDate(iso);
+  const diffDays = daysFromToday(iso);
+  if (d === null || diffDays === null) {
+    return '';
+  }
+  // Calendar days apart, not elapsed 24h blocks: a message sent at 23:00 is
+  // "Yesterday" at 01:00 the next morning, not "Today" for another 22 hours.
+  const daysAgo = -diffDays;
+  if (daysAgo === 0) {
     return 'Today';
   }
-  if (diffDays === 1) {
+  if (daysAgo === 1) {
     return 'Yesterday';
   }
   return d.toLocaleDateString('en-BW', { day: 'numeric', month: 'short' });
 }
 
 function formatDueDate(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) {
+  const d = parseServerDate(iso);
+  const diffDays = daysFromToday(iso);
+  if (d === null || diffDays === null) {
     return iso;
   }
-  const now = new Date();
-  const diffDays = Math.round((d.getTime() - now.getTime()) / 86400000);
   if (diffDays < 0) {
     return `Overdue by ${Math.abs(diffDays)} day${
       Math.abs(diffDays) !== 1 ? 's' : ''

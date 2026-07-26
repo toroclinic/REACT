@@ -8,6 +8,7 @@
 // Writes always flush to AsyncStorage so data survives process restarts.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { serverDateMs } from './datetime';
 import {
   CachedEngagementProfile,
   MemberProfile,
@@ -82,7 +83,11 @@ export function clearMemoryCache(): void {
 }
 
 export function formatLastSynced(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
+  const ms = serverDateMs(iso);
+  if (ms === null) {
+    return '';
+  }
+  const diffMs = Date.now() - ms;
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) {
     return 'Updated just now';
