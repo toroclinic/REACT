@@ -272,6 +272,23 @@ export interface CoachMessage {
   created_at: string;
 }
 
+// Must mirror CONSENT_PURPOSES in backend consentService.ts.
+export type ConsentPurpose =
+  | 'terms'
+  | 'scheme_sharing'
+  | 'care_protocol'
+  | 'ai_coach';
+
+export interface ConsentState {
+  purpose: ConsentPurpose;
+  granted: boolean;
+  version: string;
+  current_version: string;
+  needs_action: boolean;
+  channel: string;
+  recorded_at: string;
+}
+
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
 export type WalletTxnType =

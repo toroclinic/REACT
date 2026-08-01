@@ -14,9 +14,34 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
-import { CoachApi } from '../services/api';
+import { ApiError, CoachApi, ConsentApi } from '../services/api';
 import { CoachMessage } from '../types/api';
 import { colors, radius, spacing, typography } from '../theme/tokens';
+
+// A rendered turn. `failed` marks an optimistic user bubble whose send did not
+// reach the server — after the orphan-row fix a failed send leaves NOTHING
+// stored, so the bubble must read as "not sent" rather than as delivered. This
+// is the behaviour the PWA was missing, not the other way round: RN used to
+// drop the bubble entirely, which was closer to the truth but silently lost the
+// member's text.
+interface ChatItem extends CoachMessage {
+  localId: string;
+  failed?: boolean;
+  truncated?: boolean;
+}
+
+type Gate = 'checking' | 'needed' | 'ok';
+
+function isConsentRequired(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 403 &&
+    (err.body as { reason?: string } | undefined)?.reason === 'consent_required'
+  );
+}
+
+let localSeq = 0;
+const nextLocalId = () => `local_${++localSeq}`;
 
 function TypingDots() {
   const dot1 = useRef(new Animated.Value(0.3)).current;
@@ -81,22 +106,50 @@ const dotStyles = StyleSheet.create({
 export function CoachScreen() {
   const memberId = useAuthStore(s => s.memberId);
   const insets = useSafeAreaInsets();
-  const [messages, setMessages] = useState<CoachMessage[]>([]);
+  const [messages, setMessages] = useState<ChatItem[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [gate, setGate] = useState<Gate>('checking');
+  const [granting, setGranting] = useState(false);
   const listRef = useRef<FlatList>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const adopt = (rows: CoachMessage[]): ChatItem[] =>
+    rows.map(r => ({ ...r, localId: nextLocalId() }));
 
   useEffect(() => {
     if (!memberId) {
       return;
     }
     CoachApi.getHistory(memberId)
-      .then(setMessages)
-      .catch(() => setMessages([]))
+      .then(rows => {
+        setGate('ok');
+        setMessages(adopt(rows));
+      })
+      .catch(err => {
+        setGate(isConsentRequired(err) ? 'needed' : 'ok');
+        setMessages([]);
+      })
       .finally(() => setLoadingHistory(false));
   }, [memberId]);
+
+  const grantConsent = async () => {
+    if (!memberId) {
+      return;
+    }
+    setGranting(true);
+    try {
+      await ConsentApi.set(memberId, 'ai_coach', true);
+      setGate('ok');
+      const rows = await CoachApi.getHistory(memberId).catch(() => []);
+      setMessages(adopt(rows));
+    } catch {
+      Alert.alert('Error', 'Could not save your choice. Please try again.');
+    } finally {
+      setGranting(false);
+    }
+  };
 
   useEffect(
     () => () => {
@@ -123,35 +176,66 @@ export function CoachScreen() {
     }
   }, [messages.length, scrollToBottom]);
 
-  const send = async () => {
-    if (!memberId || !input.trim() || loading) {
+  // Shared by the composer and the per-bubble retry. `retryId` re-uses the
+  // existing bubble rather than appending a duplicate.
+  const deliver = async (text: string, retryId?: string) => {
+    if (!memberId || loading) {
       return;
     }
-    const text = input.trim();
-    setInput('');
 
-    const userMsg: CoachMessage = {
-      role: 'user',
-      content: text,
-      created_at: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, userMsg]);
+    const localId = retryId ?? nextLocalId();
+    setMessages(prev =>
+      retryId
+        ? prev.map(m => (m.localId === retryId ? { ...m, failed: false } : m))
+        : [
+            ...prev,
+            {
+              localId,
+              role: 'user',
+              content: text,
+              created_at: new Date().toISOString(),
+            },
+          ],
+    );
     setLoading(true);
 
     try {
-      // Backend returns {message_id, role, content} — no created_at (coach.ts).
-      // Stamp the display timestamp client-side, same as the user bubble above.
-      const { content } = await CoachApi.sendMessage(memberId, text);
+      // Backend returns {message_id, role, content, truncated} — no created_at
+      // (coach.ts). Stamp the display timestamp client-side, as above.
+      const { content, truncated } = await CoachApi.sendMessage(memberId, text);
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content, created_at: new Date().toISOString() },
+        {
+          localId: nextLocalId(),
+          role: 'assistant',
+          content,
+          created_at: new Date().toISOString(),
+          truncated: truncated === true,
+        },
       ]);
-    } catch {
-      Alert.alert('Error', 'Could not reach Tora. Please try again.');
-      setMessages(prev => prev.filter(m => m !== userMsg));
+    } catch (err) {
+      if (isConsentRequired(err)) {
+        setGate('needed');
+        setMessages(prev => prev.filter(m => m.localId !== localId));
+        return;
+      }
+      // Deliberately NOT removed: the server stored nothing, so dropping the
+      // bubble would also drop the member's text. Mark it and offer a retry.
+      setMessages(prev =>
+        prev.map(m => (m.localId === localId ? { ...m, failed: true } : m)),
+      );
     } finally {
       setLoading(false);
     }
+  };
+
+  const send = () => {
+    const text = input.trim();
+    if (!text) {
+      return;
+    }
+    setInput('');
+    void deliver(text);
   };
 
   const clearHistory = () => {
@@ -175,7 +259,7 @@ export function CoachScreen() {
     );
   };
 
-  const renderMessage = ({ item }: { item: CoachMessage }) => {
+  const renderMessage = ({ item }: { item: ChatItem }) => {
     const isUser = item.role === 'user';
     const timeStr = item.created_at
       ? new Date(item.created_at).toLocaleTimeString('en-BW', {
@@ -197,10 +281,13 @@ export function CoachScreen() {
             style={[
               styles.bubble,
               isUser ? styles.bubbleUser : styles.bubbleBot,
+              item.failed ? styles.bubbleFailed : null,
             ]}
             accessible
             accessibilityRole="text"
-            accessibilityLabel={`${isUser ? 'You' : 'Tora'}: ${item.content}`}
+            accessibilityLabel={`${isUser ? 'You' : 'Tora'}: ${item.content}${
+              item.failed ? '. Not sent' : ''
+            }`}
           >
             <Text
               style={[
@@ -211,7 +298,26 @@ export function CoachScreen() {
               {item.content}
             </Text>
           </View>
-          {timeStr && (
+          {item.failed && (
+            <TouchableOpacity
+              onPress={() => {
+                void deliver(item.content, item.localId);
+              }}
+              disabled={loading}
+              style={styles.retryBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Message not sent. Retry"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.retryText}>Not sent — tap to retry</Text>
+            </TouchableOpacity>
+          )}
+          {item.truncated && (
+            <Text style={styles.truncatedText}>
+              Tora ran out of room. Ask a follow-up for the rest.
+            </Text>
+          )}
+          {timeStr && !item.failed && (
             <Text
               style={[
                 styles.msgTime,
@@ -225,6 +331,55 @@ export function CoachScreen() {
       </View>
     );
   };
+
+  // Consent screen. "Your AI health coach" in the header is disclosure; this is
+  // the actual permission, recorded in the member_consent ledger.
+  if (gate === 'needed') {
+    return (
+      <View style={styles.screen}>
+        <View style={styles.header}>
+          <View style={styles.headerInfo}>
+            <View style={styles.toraAvatar} accessibilityElementsHidden>
+              <Text style={styles.toraAvatarText}>T</Text>
+            </View>
+            <View>
+              <Text style={styles.headerName}>Tora</Text>
+              <Text style={styles.headerSub}>Your AI health coach</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.consentWrap}>
+          <Text style={styles.consentTitle}>Before we start</Text>
+          <Text style={styles.consentBody}>
+            Tora is an AI coach. To give advice that fits you, it sends a
+            summary of your wellness profile — your tier, score, recent
+            screenings and activity, and whether a visit is coming up — to
+            Anthropic, the company that provides the AI.
+          </Text>
+          <Text style={styles.consentBody}>
+            Your name is shortened to your first name, and exact dates and
+            clinic locations are never sent. You can turn this off at any time,
+            and clearing your chat deletes the conversation.
+          </Text>
+          <TouchableOpacity
+            onPress={grantConsent}
+            disabled={granting}
+            style={[
+              styles.consentBtn,
+              granting ? styles.consentBtnDisabled : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Agree and start chatting"
+          >
+            <Text style={styles.consentBtnText}>
+              {granting ? 'Saving…' : 'I agree — start chatting'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -265,9 +420,7 @@ export function CoachScreen() {
           ref={listRef}
           style={styles.messageList}
           data={messages}
-          keyExtractor={(item, i) =>
-            item.created_at ? `${item.role}_${item.created_at}` : `msg_${i}`
-          }
+          keyExtractor={item => item.localId}
           renderItem={renderMessage}
           contentContainerStyle={styles.listContent}
           removeClippedSubviews
@@ -450,6 +603,55 @@ const styles = StyleSheet.create({
   msgTime: { ...typography.caption, marginTop: 3 },
   msgTimeUser: { color: colors.textTertiary, textAlign: 'right' },
   msgTimeBot: { color: colors.textTertiary },
+
+  // A failed send stored nothing server-side, so the bubble must not look
+  // delivered: muted, dashed, and carrying its own retry.
+  bubbleFailed: {
+    opacity: 0.55,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.dangerText,
+  },
+  retryBtn: {
+    marginTop: 3,
+    alignSelf: 'flex-end',
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+  retryText: {
+    ...typography.caption,
+    color: colors.dangerText,
+    fontWeight: '600',
+  },
+  truncatedText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 3,
+  },
+
+  consentWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  consentTitle: { ...typography.h2, color: colors.textPrimary },
+  consentBody: { ...typography.body, color: colors.textSecondary },
+  consentBtn: {
+    backgroundColor: colors.primaryTeal,
+    borderRadius: radius.pill,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+  },
+  consentBtnDisabled: { opacity: 0.6 },
+  consentBtnText: {
+    ...typography.body,
+    color: colors.white,
+    fontWeight: '600',
+  },
 
   typingRow: {
     flexDirection: 'row',

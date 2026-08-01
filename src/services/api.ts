@@ -28,6 +28,8 @@ import {
   CompletionCodeIssue,
   DailyTasks,
   CoachMessage,
+  ConsentPurpose,
+  ConsentState,
   WalletBalance,
   TopUpInitResponse,
   TopUpStatusResponse,
@@ -549,6 +551,19 @@ export const CareProtocolApi = {
     ),
 };
 
+// ---- Consent (mirrors CONSENT_PURPOSES in backend consentService.ts) ----
+
+export const ConsentApi = {
+  get: (memberId: string) =>
+    request<{ consents: ConsentState[] }>(`/member/${memberId}/consents`),
+
+  set: (memberId: string, purpose: ConsentPurpose, granted: boolean) =>
+    request<{ updated: boolean; consents: ConsentState[] }>(
+      `/member/${memberId}/consents`,
+      { method: 'POST', body: { purpose, granted } },
+    ),
+};
+
 // ---- Coach (Tora AI) ----
 
 export const CoachApi = {
@@ -557,14 +572,17 @@ export const CoachApi = {
 
   // Backend returns {message_id, role, content} (coach.ts) — there is no
   // `reply` field, so the assistant's answer was always rendered as blank.
+  // `truncated` is true when the reply hit the model's token ceiling.
   sendMessage: (memberId: string, message: string) =>
-    request<{ message_id: string; role: string; content: string }>(
-      `/coach/${memberId}/message`,
-      { method: 'POST', body: { message } },
-    ),
+    request<{
+      message_id: string;
+      role: string;
+      content: string;
+      truncated?: boolean;
+    }>(`/coach/${memberId}/message`, { method: 'POST', body: { message } }),
 
   clearHistory: (memberId: string) =>
-    request<{ ok: boolean }>(`/coach/${memberId}/history`, {
+    request<{ cleared: boolean }>(`/coach/${memberId}/history`, {
       method: 'DELETE',
     }),
 };
