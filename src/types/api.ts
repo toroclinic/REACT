@@ -36,6 +36,36 @@ export interface EngagementEventResponse {
   current_score: number;
   current_tier: Tier;
   event_id?: string;
+  duplicate?: boolean;
+  // Server-side clinical assessment of the submitted reading (batch A —
+  // clients render this, they never classify locally). This client doesn't
+  // consume it yet; typed so the contract doesn't drift while the RN
+  // assessment banner waits on the next APK cycle.
+  assessment?: {
+    level: 'green' | 'amber' | 'red' | 'critical';
+    parameter: string | null;
+    value_text: string | null;
+    detail: string | null;
+    actions: {
+      alert_created: boolean;
+      inbox_message: boolean;
+      education: boolean;
+      sms: 'sent' | 'sending' | 'failed' | 'unavailable';
+      clinic_email:
+        | 'sent'
+        | 'sending'
+        | 'failed'
+        | 'no_clinic'
+        | 'unavailable'
+        | 'not_applicable';
+      call_centre:
+        | 'sent'
+        | 'sending'
+        | 'failed'
+        | 'unavailable'
+        | 'not_applicable';
+    } | null;
+  } | null;
 }
 
 export interface ScoreBreakdownItem {
