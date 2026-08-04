@@ -69,6 +69,12 @@ export interface EngagementEventResponse {
 }
 
 export interface ScoreBreakdownItem {
+  /**
+   * Stable identifier. `category` is display copy and may be reworded — match
+   * on this when you need to find a specific line, never on the category text.
+   * Optional so a backend that predates the field still typechecks.
+   */
+  key?: 'bp' | 'glucose' | 'activity' | 'medication';
   category: string;
   earned: number;
   max: number;
@@ -102,6 +108,13 @@ export interface CreditResponse {
   // Weighted (duration brackets 0.5–2.0) and capped at the scheme max — the
   // number scoring actually uses. Optional for older backends.
   activity_checkins_weighted?: number;
+  // Chronic-care server truth. Optional for the same reason as the field above
+  // — a client deployed ahead of the backend must keep its local value rather
+  // than read `undefined` as false and hide a chronic member's own care card.
+  // The month rollover for medication_confirmed_this_month belongs to the
+  // server; clients render this and never latch or reset it themselves.
+  chronic_member?: boolean;
+  medication_confirmed_this_month?: boolean;
   scheme_id?: string;
   scheme_name?: string;
   scheme_color?: string;

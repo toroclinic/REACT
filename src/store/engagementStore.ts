@@ -72,6 +72,18 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
         activity_checkins_this_cycle:
           credit.activity_checkins_weighted ??
           current.activity_checkins_this_cycle,
+        // Chronic-care truth, same shape and same reason as the counter above.
+        // Until these lines existed nothing on any client ever set
+        // chronic_member true — it defaulted false in FALLBACK_PROFILE and no
+        // response carried it — so the chronic care card and the medication
+        // task were unreachable UI for every member who qualified for them.
+        // medication_confirmed_this_month additionally had no reset: set
+        // optimistically on log, never corrected, still true next month.
+        // The server owns the month boundary; we only render what it sends.
+        chronic_member: credit.chronic_member ?? current.chronic_member,
+        medication_confirmed_this_month:
+          credit.medication_confirmed_this_month ??
+          current.medication_confirmed_this_month,
         scheme_id: credit.scheme_id,
         scheme_name: credit.scheme_name,
         scheme_color: credit.scheme_color,
