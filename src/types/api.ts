@@ -69,6 +69,9 @@ export interface CreditResponse {
   effective_at_renewal_date: string;
   bp_screening_done: boolean;
   glucose_screening_done: boolean;
+  // Weighted (duration brackets 0.5–2.0) and capped at the scheme max — the
+  // number scoring actually uses. Optional for older backends.
+  activity_checkins_weighted?: number;
   scheme_id?: string;
   scheme_name?: string;
   scheme_color?: string;

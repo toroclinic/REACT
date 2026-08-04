@@ -65,6 +65,13 @@ export const useEngagementStore = create<EngagementState>((set, get) => ({
         glucose_screening_status: credit.glucose_screening_done
           ? 'confirmed'
           : current.glucose_screening_status,
+        // Server truth for the cycle counter (weighted, capped — see /credit).
+        // Without this the counter was write-only local state: never synced
+        // across devices, never reset at cycle rollover. Falls back to the
+        // local value when an older backend doesn't send the field.
+        activity_checkins_this_cycle:
+          credit.activity_checkins_weighted ??
+          current.activity_checkins_this_cycle,
         scheme_id: credit.scheme_id,
         scheme_name: credit.scheme_name,
         scheme_color: credit.scheme_color,
