@@ -199,6 +199,9 @@ export interface ActivityHistoryEntry {
   activity_type: string;
   duration_minutes: number | null;
   logged_at: string;
+  // The day the member says the activity happened (calendar backdating).
+  // Display groups by this; scoring uses logged_at's cycle (ruling D).
+  claimed_date?: string | null;
 }
 
 export interface ScreeningResult {

@@ -42,7 +42,9 @@ function computeStreak(entries: ActivityHistoryEntry[]): number {
     return 0;
   }
   const days = new Set(
-    entries.map(e => new Date(e.logged_at).toLocaleDateString('en-CA')),
+    entries.map(
+      e => e.claimed_date ?? new Date(e.logged_at).toLocaleDateString('en-CA'),
+    ),
   );
   const cursor = new Date();
   if (!days.has(cursor.toLocaleDateString('en-CA'))) {

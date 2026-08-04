@@ -75,7 +75,9 @@ function groupByDate(
 ): Map<string, ActivityHistoryEntry[]> {
   const map = new Map<string, ActivityHistoryEntry[]>();
   for (const h of history) {
-    const key = new Date(h.logged_at).toLocaleDateString('en-CA'); // YYYY-MM-DD
+    // Claimed day first (ruling D) — the day the member says it happened.
+    const key =
+      h.claimed_date ?? new Date(h.logged_at).toLocaleDateString('en-CA');
     const arr = map.get(key) ?? [];
     arr.push(h);
     map.set(key, arr);
@@ -172,14 +174,19 @@ export function ActivityCalendar({ history, memberId, onLogged }: Props) {
     }
     setLogging(true);
     try {
+      // Ruling D: the claimed day rides METADATA — the server scores by
+      // arrival (created_at's cycle) but records and displays the day the
+      // member says it happened. The old `timestamp` field was silently
+      // ignored server-side, so backdated entries visibly moved to "today".
       await PricingApi.submitEvent({
         member_id: memberId,
         event_type: 'activity_checkin',
         channel: 'app',
-        timestamp: selectedDay
-          ? new Date(selectedDay + 'T12:00:00').toISOString()
-          : new Date().toISOString(),
-        metadata: { activity_type: selActivity, duration_minutes: selDuration },
+        metadata: {
+          activity_type: selActivity,
+          duration_minutes: selDuration,
+          claimed_date: selectedDay ?? new Date().toLocaleDateString('en-CA'),
+        },
       });
       setDone(true);
       setSelActivity(null);
