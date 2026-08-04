@@ -369,7 +369,14 @@ export function ActivityCalendar({ history, memberId, onLogged }: Props) {
               {done ? (
                 <View style={styles.doneWrap}>
                   <Text style={styles.doneCheck}>✓</Text>
-                  <Text style={styles.doneText}>Activity logged!</Text>
+                  <Text style={styles.doneText}>
+                    {selectedDay &&
+                    selectedDay !== new Date().toLocaleDateString('en-CA')
+                      ? `Logged for ${formatDayHeading(
+                          selectedDay,
+                        )} — counts toward this cycle`
+                      : 'Activity logged!'}
+                  </Text>
                 </View>
               ) : (
                 <>
