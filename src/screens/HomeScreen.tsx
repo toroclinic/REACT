@@ -136,6 +136,13 @@ export function HomeScreen({ navigation }: Props) {
     () => alerts.filter(a => !dismissedAlerts.has(a.alert_id)),
     [alerts, dismissedAlerts],
   );
+  const visibleBreakdown = useMemo(
+    () =>
+      (profile?.breakdown ?? []).filter(
+        item => item.key !== 'medication' || profile?.chronic_member,
+      ),
+    [profile],
+  );
   const walletSaving = useMemo(() => {
     if (!profile || annualPremium == null || profile.credit_pct <= 0) {
       return null;
@@ -389,7 +396,12 @@ export function HomeScreen({ navigation }: Props) {
         </View>
 
         {/* ── Score breakdown ── */}
-        {profile.breakdown && profile.breakdown.length > 0 && (
+        {/* The chronic-medication line is worth 0 of 15 to a member who isn't
+            on the chronic programme, with no action available to change it —
+            not a task they're behind on, a category that isn't theirs. Left in,
+            it implied a 100-point ceiling when their real attainable total is
+            85. Filtered here for the same reason as the web build. */}
+        {visibleBreakdown.length > 0 && (
           <View style={styles.breakdownCard}>
             <View style={styles.breakdownHeader}>
               <Text style={styles.breakdownTitle}>Score breakdown</Text>
@@ -408,7 +420,7 @@ export function HomeScreen({ navigation }: Props) {
                 </View>
               )}
             </View>
-            {profile.breakdown.map(item => (
+            {visibleBreakdown.map(item => (
               <View key={item.category} style={styles.breakdownRow}>
                 <View
                   style={[
@@ -442,11 +454,7 @@ export function HomeScreen({ navigation }: Props) {
         {/* ── Daily tasks ── */}
         {memberId && (
           <DailyTasksCard
-            profileTasks={{
-              blood_pressure: profile.bp_screening_status !== 'not_logged',
-              activity: profile.activity_checkins_this_cycle > 0,
-              medication: profile.medication_confirmed_this_month,
-            }}
+            memberId={memberId}
             onNavigate={screen => {
               if (screen === 'Activity') {
                 navigation.navigate('Activity');

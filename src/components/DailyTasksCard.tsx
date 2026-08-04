@@ -1,46 +1,111 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+﻿// Today's health tasks — DAY-scoped, and the server decides.
+//
+// This card used to take a `profileTasks` prop and merge it over `serverTasks`
+// with `??`. Those fields were always defined, so the merge never fell through;
+// on this client it was total, because HomeScreen passed profileTasks ONLY and
+// GET /daily-tasks was never called here at all. The profile fields are CYCLE-
+// and MONTH-scoped (`activity_checkins_this_cycle > 0`,
+// `bp_screening_status !== 'not_logged'`), so one check-in ticked "Activity"
+// for the rest of the year — a daily card that stopped being about today.
+//
+// The endpoint is already day-scoped and already carries the F-10 boundary fix,
+// so it is the single source of truth and there is no merge left to drift.
+// Refetched on mount and whenever the app returns to the foreground (the RN
+// twin of the web build's visibilitychange).
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  AppState,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DailyTasks } from '../types/api';
+import { MemberApi } from '../services/api';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 interface Props {
-  serverTasks?: DailyTasks | null;
-  profileTasks?: {
-    blood_pressure: boolean;
-    activity: boolean;
-    medication: boolean;
-  };
+  memberId: string;
   onNavigate?: (screen: string) => void;
 }
 
 const WATER_GOAL = 8;
 const WATER_KEY = 'wellness:water_glasses_';
 
-function todayKey() {
-  return WATER_KEY + new Date().toISOString().slice(0, 10);
+// LOCAL calendar day, not toISOString(). Botswana is UTC+2, so a UTC key rolled
+// the member's day over at 02:00 local: a glass logged at 00:30 was written
+// against tomorrow, and the counter reset two hours into the day. Same class as
+// F47 — right format, wrong boundary.
+function localDayKey(d: Date = new Date()): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
-export function DailyTasksCard({
-  serverTasks,
-  profileTasks,
-  onNavigate,
-}: Props) {
+function todayKey() {
+  return WATER_KEY + localDayKey();
+}
+
+// Day-keyed rows were written once per day and never deleted, growing without
+// bound in the same store that holds the offline event queue.
+async function pruneWaterKeys(keepDays = 7): Promise<void> {
+  try {
+    const cutoff =
+      WATER_KEY + localDayKey(new Date(Date.now() - keepDays * 86_400_000));
+    const keys = await AsyncStorage.getAllKeys();
+    const doomed = keys.filter(k => k.startsWith(WATER_KEY) && k < cutoff);
+    if (doomed.length > 0) {
+      await AsyncStorage.multiRemove(doomed);
+    }
+  } catch {
+    /* housekeeping only — never block the card on it */
+  }
+}
+
+export function DailyTasksCard({ memberId, onNavigate }: Props) {
   const [water, setWater] = useState(0);
+  const [serverTasks, setServerTasks] = useState<Omit<DailyTasks, 'water'>>({
+    medication: false,
+    blood_pressure: false,
+    activity: false,
+  });
   const loadedRef = useRef(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    MemberApi.getDailyTasks(memberId)
+      .then(t =>
+        setServerTasks({
+          medication: t.medication,
+          blood_pressure: t.blood_pressure,
+          activity: t.activity,
+        }),
+      )
+      .catch(() => {
+        /* offline — keep whatever we last showed */
+      });
+    // Re-read against TODAY's key, so an app left open across midnight shows
+    // the new day rather than yesterday's count.
     AsyncStorage.getItem(todayKey())
       .then(v => {
         loadedRef.current = true;
-        if (v !== null) {
-          setWater(parseInt(v, 10) || 0);
-        }
+        setWater(v !== null ? parseInt(v, 10) || 0 : 0);
       })
       .catch(() => {
         loadedRef.current = true; /* AsyncStorage unavailable */
       });
-  }, []);
+  }, [memberId]);
+
+  useEffect(() => {
+    load();
+    void pruneWaterKeys();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        load();
+      }
+    });
+    return () => sub.remove();
+  }, [load]);
 
   useEffect(() => {
     if (!loadedRef.current) {
@@ -50,10 +115,9 @@ export function DailyTasksCard({
   }, [water]);
 
   const merged: DailyTasks = {
-    medication: profileTasks?.medication ?? serverTasks?.medication ?? false,
-    blood_pressure:
-      profileTasks?.blood_pressure ?? serverTasks?.blood_pressure ?? false,
-    activity: profileTasks?.activity ?? serverTasks?.activity ?? false,
+    medication: serverTasks.medication,
+    blood_pressure: serverTasks.blood_pressure,
+    activity: serverTasks.activity,
     water: water >= WATER_GOAL,
   };
 
