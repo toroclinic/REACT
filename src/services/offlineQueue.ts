@@ -30,7 +30,10 @@ export interface QueuedEvent {
   evidenceDataUrl?: string;
 }
 
-function generateLocalId(): string {
+// Exported: a caller that tries a DIRECT submit before falling back to this
+// queue must mint the key here and hand the same one to both, or the two
+// attempts look like two different submissions to the server.
+export function generateLocalId(): string {
   // RFC4122-ish v4, good enough for an idempotency key — replace with
   // `react-native-uuid` if stricter collision guarantees are needed.
   return (
@@ -53,12 +56,21 @@ async function writeQueue(queue: QueuedEvent[]): Promise<void> {
 // Call this from any screen action (screening log, activity check-in, etc.)
 // instead of calling PricingApi.submitEvent directly. Returns immediately
 // so the UI can optimistically update without waiting on the network.
+//
+// `localId` is the idempotency key this queue sends on every replay. It is now
+// OPTIONAL-BUT-ACCEPTED from the caller: a screen that tries a direct submit
+// first and falls back here on failure MUST pass the key it already used. A
+// timeout is not proof the server didn't record the event, so the direct
+// attempt and the queued replay have to be the same submission in the server's
+// eyes. Minting a fresh key here would make them two, and the second would be
+// recorded — the exact double-count the PWA fixed by sharing one key.
 export async function enqueueEngagementEvent(
   event: Omit<EngagementEventRequest, 'timestamp'>,
   evidenceDataUrl?: string,
+  localId: string = generateLocalId(),
 ): Promise<QueuedEvent> {
   const queued: QueuedEvent = {
-    localId: generateLocalId(),
+    localId,
     event: { ...event, timestamp: new Date().toISOString() },
     enqueuedAt: new Date().toISOString(),
     attempts: 0,

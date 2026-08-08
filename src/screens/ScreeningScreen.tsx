@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useState } from 'react';
+﻿import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,24 @@ import { ScreeningTrends } from '../components/ScreeningTrends';
 import { useAuthStore } from '../store/authStore';
 import { useEngagementStore } from '../store/engagementStore';
 import { ClinicApi, PricingApi } from '../services/api';
+import {
+  enqueueEngagementEvent,
+  generateLocalId,
+} from '../services/offlineQueue';
+import { submitScreening } from '../services/submitScreening';
+import {
+  LEVEL_COLORS,
+  LEVEL_EMOJI,
+  LEVEL_TITLE,
+  LEVEL_STEPS,
+  actionLines,
+} from '../services/assessmentPresentation';
+import {
+  type BannerState,
+  getPendingAssessment,
+  setPendingAssessment,
+  clearPendingAssessment,
+} from '../services/pendingAssessment';
 import {
   Clinic,
   ScreeningHistoryEntry,
@@ -128,7 +146,7 @@ const SCREENING_META: Record<ScreeningKey, ScreeningMeta> = {
 // survived here only because the build guard lived in the web repo and merely
 // DESCRIBED these strings — a rule enforced in one place and described in
 // another is a rule that has already drifted. This app now has its own guard
-// (scripts/guard-no-client-clinical-math.mjs) that fails the build on these
+// (scripts/guard-no-client-clinical-math.js) that fails the build on these
 // identifiers.
 //
 // The member still gets a verdict; it now comes from the server, after the
@@ -198,7 +216,15 @@ function fmtResult(result: string | null): string {
 
 export function ScreeningScreen() {
   const memberId = useAuthStore(s => s.memberId);
-  const { profile, logEvent } = useEngagementStore();
+  const { profile, applyOptimisticUpdate, refreshFromServer } =
+    useEngagementStore();
+
+  // The server's verdict on the last reading logged here. This screen no
+  // longer classifies anything, so this banner is the ONLY place a member sees
+  // a band — and it is persisted, because the PIN lock unmounts this tree
+  // after five minutes and Android will kill a backgrounded app outright. A
+  // banner carrying "call 997 NOW" must survive a phone call.
+  const [banner, setBanner] = useState<BannerState | null>(null);
 
   const [tab, setTab] = useState<ScreenTab>('tests');
   const [activeKey, setActiveKey] = useState<ScreeningKey | null>(null);
@@ -239,6 +265,23 @@ export function ScreeningScreen() {
   const [eyeLeft, setEyeLeft] = useState('');
   // Dental
   const [dentalNotes, setDentalNotes] = useState('');
+
+  // Restore a banner the member may not have finished reading. Runs once per
+  // member: the reading it describes was logged before this mount.
+  useEffect(() => {
+    if (!memberId) {
+      return;
+    }
+    let cancelled = false;
+    void getPendingAssessment(memberId).then(b => {
+      if (!cancelled && b) {
+        setBanner(b);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId]);
 
   const loadHistory = useCallback(async () => {
     if (!memberId || historyLoaded) {
@@ -427,19 +470,78 @@ export function ScreeningScreen() {
     if (!memberId) {
       return;
     }
+    const eventType = SCREENING_META[key].eventType;
+    const label = SCREENING_META[key].label;
     setSubmitting(key);
     try {
-      await logEvent(
-        memberId,
-        SCREENING_META[key].eventType,
-        profile.chronic_member,
-        buildRawValue(key),
-        slipPhoto ?? undefined,
+      // Direct POST first, offline queue only on failure — the same write path
+      // as the PWA, so the two clients stop diverging. submitScreening owns the
+      // idempotency key and hands the SAME one to both attempts (pinned by
+      // services/__tests__/submitScreening.test.ts).
+      const outcome = await submitScreening(
+        {
+          submitEvent: (event, idempotencyKey) =>
+            PricingApi.submitEvent(event, idempotencyKey),
+          enqueue: (event, evidenceDataUrl, localId) =>
+            enqueueEngagementEvent(event, evidenceDataUrl, localId),
+          attachEvidence: (eventId, url) =>
+            PricingApi.attachEvidence(eventId, url),
+          newKey: generateLocalId,
+          nowIso: () => new Date().toISOString(),
+        },
+        {
+          memberId,
+          eventType,
+          rawValue: buildRawValue(key),
+          evidenceDataUrl: slipPhoto ?? undefined,
+        },
       );
+
+      // The server's classification IS the banner. Only set when the server
+      // classified something: a log with nothing classifiable must neither
+      // show a band nor clear an earlier one, which may still be carrying live
+      // emergency instructions for another reading.
+      if (outcome.kind === 'assessed') {
+        const b: BannerState = {
+          kind: 'assessed',
+          assessment: outcome.assessment,
+          label,
+        };
+        setBanner(b);
+        void setPendingAssessment(memberId, b);
+      } else if (outcome.kind === 'queued') {
+        const b: BannerState = { kind: 'queued', label };
+        setBanner(b);
+        void setPendingAssessment(memberId, b);
+      }
+
+      // The optimistic status patch logEvent used to apply. Scored types only —
+      // the same two the cycle score counts.
+      if (eventType === 'bp_screening') {
+        void applyOptimisticUpdate({
+          bp_screening_status: 'pending_confirmation',
+        });
+      }
+      if (eventType === 'glucose_screening') {
+        void applyOptimisticUpdate({
+          glucose_screening_status: 'pending_confirmation',
+        });
+      }
+      if (outcome.kind !== 'queued') {
+        void refreshFromServer(memberId);
+      }
+
       setSubmitted(prev => new Set(prev).add(key));
       setActiveKey(null);
       setSlipPhoto(null);
-      setPhotoError('');
+      // Set AFTER the reset, or the reset wipes it. The reading is saved
+      // either way — only the photo failed, and the member needs to know the
+      // slip is not on file so they can show the paper one instead.
+      setPhotoError(
+        outcome.kind !== 'queued' && slipPhoto && !outcome.evidenceAttached
+          ? 'Your reading was saved, but the photo did not upload — show the paper slip at the clinic instead.'
+          : '',
+      );
       if (key === 'bp') {
         setBpSys('');
         setBpDia('');
@@ -807,6 +909,116 @@ export function ScreeningScreen() {
           <Text style={styles.subtitle}>
             Free at any partner clinic, or log a recent result yourself.
           </Text>
+
+          {/*
+            Post-log assessment banner — renders what the SERVER returned and
+            nothing else. This replaced five local classifiers that had drifted
+            from the backend grid; the worst of them showed a green "Normal
+            range" for a glucose of 2.5 mmol/L, which the server classifies as
+            severe hypoglycaemia. Dismissing is explicit, so a critical result
+            cannot be scrolled away by accident.
+          */}
+          {banner && (
+            <View
+              style={[
+                styles.assessBanner,
+                banner.kind === 'assessed'
+                  ? {
+                      backgroundColor: LEVEL_COLORS[banner.assessment.level].bg,
+                      borderColor: LEVEL_COLORS[banner.assessment.level].border,
+                    }
+                  : styles.assessBannerQueued,
+              ]}
+            >
+              {banner.kind === 'queued' ? (
+                <>
+                  <Text
+                    style={[styles.assessTitle, { color: colors.warningText }]}
+                  >
+                    ⏳ {banner.label} saved — assessment pending
+                  </Text>
+                  <Text
+                    style={[styles.assessStep, { color: colors.warningText }]}
+                  >
+                    You're offline. This reading will be checked as soon as
+                    you're back on the network — no result has been worked out
+                    on this phone.
+                  </Text>
+                  <Text
+                    style={[styles.assessStep, { color: colors.warningText }]}
+                  >
+                    If you feel unwell now, call 997.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text
+                    style={[
+                      styles.assessTitle,
+                      { color: LEVEL_COLORS[banner.assessment.level].text },
+                    ]}
+                  >
+                    {LEVEL_EMOJI[banner.assessment.level]}{' '}
+                    {LEVEL_TITLE[banner.assessment.level]} · {banner.label}
+                  </Text>
+                  {banner.assessment.value_text ? (
+                    <Text
+                      style={[
+                        styles.assessValue,
+                        { color: LEVEL_COLORS[banner.assessment.level].text },
+                      ]}
+                    >
+                      {banner.assessment.value_text}
+                    </Text>
+                  ) : null}
+                  {LEVEL_STEPS[banner.assessment.level].map(step => (
+                    <Text
+                      key={step}
+                      style={[
+                        styles.assessStep,
+                        { color: LEVEL_COLORS[banner.assessment.level].text },
+                      ]}
+                    >
+                      • {step}
+                    </Text>
+                  ))}
+                  {actionLines(banner.assessment).map(line => (
+                    <Text
+                      key={line}
+                      style={[
+                        styles.assessAction,
+                        { color: LEVEL_COLORS[banner.assessment.level].text },
+                      ]}
+                    >
+                      {line}
+                    </Text>
+                  ))}
+                </>
+              )}
+              <TouchableOpacity
+                onPress={() => {
+                  setBanner(null);
+                  void clearPendingAssessment();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss assessment"
+              >
+                <Text
+                  style={[
+                    styles.assessDismiss,
+                    {
+                      color:
+                        banner.kind === 'assessed'
+                          ? LEVEL_COLORS[banner.assessment.level].text
+                          : colors.warningText,
+                    },
+                  ]}
+                >
+                  Dismiss
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {(Object.keys(SCREENING_META) as ScreeningKey[]).map(key => {
             const meta = SCREENING_META[key];
@@ -1190,16 +1402,33 @@ const styles = StyleSheet.create({
   bmiResult: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   bmiLabel: { ...typography.bodySmall, color: colors.textSecondary },
   bmiValue: { ...typography.h3, color: colors.textPrimary },
-  trafficLight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs + 2,
-    borderRadius: radius.md,
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm,
-    alignSelf: 'flex-start',
+  // The live "traffic light" styles went with the classifiers that fed them.
+
+  // Post-log assessment banner — the server's verdict, the only band a member
+  // now sees on this screen.
+  assessBanner: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
   },
-  trafficLightText: { ...typography.caption, fontWeight: '500' as const },
+  // The offline state is the one banner whose colours are not driven by a
+  // server level — there is no level yet, which is the point.
+  assessBannerQueued: {
+    backgroundColor: colors.warningBg,
+    borderColor: '#E8D2A0',
+  },
+  assessTitle: { ...typography.bodySmall, fontWeight: '700' as const },
+  assessValue: { ...typography.h3 },
+  assessStep: { ...typography.caption },
+  assessAction: { ...typography.caption, fontStyle: 'italic' as const },
+  assessDismiss: {
+    ...typography.caption,
+    fontWeight: '600' as const,
+    marginTop: spacing.xs,
+    textDecorationLine: 'underline' as const,
+  },
 
   actions: { flexDirection: 'row', gap: spacing.sm },
   submitBtn: {

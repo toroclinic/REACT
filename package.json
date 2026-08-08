@@ -9,8 +9,9 @@
     "pod-install": "cd ios && pod install",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
+    "test": "jest",
     "guard:clinical": "node scripts/guard-no-client-clinical-math.js",
-    "verify": "npm run typecheck && npm run lint -- --max-warnings 0 && npm run guard:clinical"
+    "verify": "npm run typecheck && npm run lint -- --max-warnings 0 && npm run guard:clinical && npm test"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.24.0",
@@ -41,7 +42,9 @@
     "@types/node": "^26.0.0",
     "@types/react": "^18.2.6",
     "@types/react-native-vector-icons": "^6.4.18",
+    "babel-jest": "^29.7.0",
     "eslint": "^8.19.0",
+    "jest": "^29.7.0",
     "prettier": "^2.8.8",
     "typescript": "5.0.4"
   },
