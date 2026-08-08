@@ -8,7 +8,9 @@
     "start": "node scripts/adb-watch.js && react-native start",
     "pod-install": "cd ios && pod install",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts,.tsx"
+    "lint": "eslint . --ext .ts,.tsx",
+    "guard:clinical": "node scripts/guard-no-client-clinical-math.js",
+    "verify": "npm run typecheck && npm run lint -- --max-warnings 0 && npm run guard:clinical"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.24.0",

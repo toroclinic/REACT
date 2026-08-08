@@ -194,10 +194,15 @@ const FEATURES = [
     sub: 'Unlock premium discounts up to 10%',
     accent: '#8A5A24',
   },
+  // Was "Instant escalation — Critical results reach a doctor in minutes",
+  // on the FIRST screen a member ever sees. Nothing reaches a doctor: no
+  // pathway exists, and this tier makes no clinic-reacts promise at all. The
+  // honest version of the same slot is what the product does do — keep the
+  // record, and hand it over yourself.
   {
-    emoji: '🚨',
-    label: 'Instant escalation',
-    sub: 'Critical results reach a doctor in minutes',
+    emoji: '📄',
+    label: 'Your health record',
+    sub: 'Download and share it with your doctor',
     accent: '#C4362A',
   },
 ];

@@ -11,7 +11,10 @@ export { MintTag } from './MintTag';
 export { FilterChips } from './FilterChips';
 export { VerifiedTick } from './VerifiedTick';
 export { StreakBadge } from './StreakBadge';
-export { EscalationBadge } from './EscalationBadge';
+// EscalationBadge deleted 2026-08-08 (HHR launch, honest-copy pass): it
+// rendered "<5 MIN · CLINIC ESCALATION" with no escalation pathway behind it.
+// It was exported but never rendered on any RN screen, so deleting it changes
+// no pixel — it was a loaded gun in the component library.
 export { EmergencyNotice } from './EmergencyNotice';
 export { PulaCreditChip } from './PulaCreditChip';
 export { HeroHeaderCard } from './HeroHeaderCard';

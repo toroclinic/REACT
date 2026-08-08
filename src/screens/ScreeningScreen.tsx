@@ -60,7 +60,13 @@ const SCREENING_META: Record<ScreeningKey, ScreeningMeta> = {
   },
   glucose: {
     label: 'Blood glucose',
-    subtitle: 'Fasting glucose (mmol/L)',
+    // NOT "Fasting glucose". Nothing in the schema or either client records
+    // whether a reading was taken fasting, so the label asserted a clinical
+    // condition the record cannot support — and fasting state changes how the
+    // number should be read. Plain "glucose" until a fasting flag exists at
+    // capture; the bands themselves are a question owed to the medical
+    // director (docs/clinical-threshold-grid.md, ruling 3).
+    subtitle: 'Blood glucose (mmol/L)',
     icon: 'water-opacity',
     points: '25 pts',
     eventType: 'glucose_screening',
@@ -103,116 +109,32 @@ const SCREENING_META: Record<ScreeningKey, ScreeningMeta> = {
 };
 
 // ─── Classification ───────────────────────────────────────────────────
-
-function bpClass(
-  sys: string,
-  dia: string,
-): 'normal' | 'warning' | 'critical' | null {
-  const s = parseFloat(sys);
-  const d = parseFloat(dia);
-  if (isNaN(s) || isNaN(d)) {
-    return null;
-  }
-  if (s >= 180 || d >= 110) {
-    return 'critical';
-  }
-  if (s >= 140 || d >= 90) {
-    return 'warning';
-  }
-  return 'normal';
-}
-function glucoseClass(v: string): 'normal' | 'warning' | 'critical' | null {
-  const n = parseFloat(v);
-  if (isNaN(n)) {
-    return null;
-  }
-  if (n >= 11.1) {
-    return 'critical';
-  }
-  if (n >= 6.1) {
-    return 'warning';
-  }
-  return 'normal';
-}
-function spo2Class(v: string): 'normal' | 'warning' | 'critical' | null {
-  const n = parseFloat(v);
-  if (isNaN(n)) {
-    return null;
-  }
-  if (n < 90) {
-    return 'critical';
-  }
-  if (n < 95) {
-    return 'warning';
-  }
-  return 'normal';
-}
-function cholesterolClass(
-  total: string,
-): 'normal' | 'warning' | 'critical' | null {
-  const n = parseFloat(total);
-  if (isNaN(n)) {
-    return null;
-  }
-  if (n >= 6.2) {
-    return 'critical';
-  }
-  if (n >= 5.2) {
-    return 'warning';
-  }
-  return 'normal';
-}
-function bmiClass(
-  weight: string,
-  height: string,
-): 'normal' | 'warning' | 'critical' | null {
-  const w = parseFloat(weight);
-  const h = parseFloat(height) / 100;
-  if (isNaN(w) || isNaN(h) || h === 0) {
-    return null;
-  }
-  const bmi = w / (h * h);
-  if (bmi >= 30 || bmi < 17) {
-    return 'critical';
-  }
-  if (bmi >= 25 || bmi < 18.5) {
-    return 'warning';
-  }
-  return 'normal';
-}
-
-const CLASS_CONFIG = {
-  normal: {
-    color: colors.successText,
-    bg: colors.successBg,
-    icon: 'check-circle',
-    label: 'Normal range',
-  },
-  warning: {
-    color: colors.warningText,
-    bg: colors.warningBg,
-    icon: 'alert-circle',
-    label: 'Above normal',
-  },
-  critical: {
-    color: colors.dangerText,
-    bg: colors.dangerBg,
-    icon: 'alert',
-    label: 'Seek medical advice',
-  },
-};
-
-function TrafficLight({ cls }: { cls: 'normal' | 'warning' | 'critical' }) {
-  const cfg = CLASS_CONFIG[cls];
-  return (
-    <View style={[styles.trafficLight, { backgroundColor: cfg.bg }]}>
-      <Icon name={cfg.icon} size={14} color={cfg.color} />
-      <Text style={[styles.trafficLightText, { color: cfg.color }]}>
-        {cfg.label}
-      </Text>
-    </View>
-  );
-}
+//
+// THERE IS NONE HERE, DELIBERATELY, AND THERE MUST NEVER BE AGAIN.
+//
+// This file used to hold five local classifiers — bpClass, glucoseClass,
+// spo2Class, cholesterolClass, bmiClass — feeding a live "traffic light" chip
+// as the member typed. Every one of them had drifted from the backend grid,
+// and the drift ran in the dangerous direction:
+//
+//   · glucose had NO hypoglycaemia branch at all, so 2.5 mmol/L rendered a
+//     green "Normal range" while the server classifies it CRITICAL, sets the
+//     ambulance flag and SMSes the member to call 997;
+//   · BP called critical at diastolic 110 (server: 120) and had no amber band,
+//     so 135/85 read "Normal range" against the server's stage-1 hypertension;
+//   · cholesterol and BMI each disagreed with the server on both boundaries.
+//
+// This is precisely the 840-cell drift the PWA was cleaned of in batch A. It
+// survived here only because the build guard lived in the web repo and merely
+// DESCRIBED these strings — a rule enforced in one place and described in
+// another is a rule that has already drifted. This app now has its own guard
+// (scripts/guard-no-client-clinical-math.mjs) that fails the build on these
+// identifiers.
+//
+// The member still gets a verdict; it now comes from the server, after the
+// reading is submitted, via the assessment banner below. The cost is that
+// there is no verdict WHILE TYPING — which is correct: a number the server has
+// not seen has not been classified by anything trustworthy.
 
 // ─── History helpers ──────────────────────────────────────────────────
 
@@ -564,7 +486,6 @@ export function ScreeningScreen() {
 
   const renderInputs = (key: ScreeningKey) => {
     if (key === 'bp') {
-      const cls = bpClass(bpSys, bpDia);
       return (
         <View style={styles.inputs}>
           <Text style={styles.inputLabel}>Enter your reading</Text>
@@ -595,15 +516,13 @@ export function ScreeningScreen() {
               />
             </View>
           </View>
-          {cls && <TrafficLight cls={cls} />}
         </View>
       );
     }
     if (key === 'glucose') {
-      const cls = glucoseClass(glucoseVal);
       return (
         <View style={styles.inputs}>
-          <Text style={styles.inputLabel}>Fasting glucose reading</Text>
+          <Text style={styles.inputLabel}>Blood glucose reading</Text>
           <View style={styles.unitRow}>
             <TextInput
               style={[styles.input, styles.inputFlex]}
@@ -615,13 +534,16 @@ export function ScreeningScreen() {
             />
             <Text style={styles.unit}>mmol/L</Text>
           </View>
-          {cls && <TrafficLight cls={cls} />}
-          <Text style={styles.rangeNote}>Normal fasting: 3.9–6.0 mmol/L</Text>
+          {/*
+            "Normal fasting: 3.9–6.0 mmol/L" removed: nothing records whether
+            the reading was taken fasting, so quoting a fasting reference range
+            told the member to read their number against a standard the record
+            cannot show they met.
+          */}
         </View>
       );
     }
     if (key === 'spo2') {
-      const cls = spo2Class(spo2Val);
       return (
         <View style={styles.inputs}>
           <Text style={styles.inputLabel}>Oxygen saturation reading</Text>
@@ -637,13 +559,11 @@ export function ScreeningScreen() {
             />
             <Text style={styles.unit}>%</Text>
           </View>
-          {cls && <TrafficLight cls={cls} />}
           <Text style={styles.rangeNote}>Normal: 95–100%</Text>
         </View>
       );
     }
     if (key === 'cholesterol') {
-      const cls = cholesterolClass(cholTotal);
       return (
         <View style={styles.inputs}>
           <Text style={styles.inputLabel}>Cholesterol panel (mmol/L)</Text>
@@ -682,13 +602,11 @@ export function ScreeningScreen() {
               />
             </View>
           </View>
-          {cls && <TrafficLight cls={cls} />}
           <Text style={styles.rangeNote}>Normal total: &lt; 5.2 mmol/L</Text>
         </View>
       );
     }
     if (key === 'bmi') {
-      const cls = bmiClass(bmiWeight, bmiHeight);
       const bmiVal =
         bmiWeight && bmiHeight
           ? (
@@ -734,7 +652,6 @@ export function ScreeningScreen() {
               <Text style={styles.bmiValue}>{bmiVal}</Text>
             </View>
           )}
-          {cls && <TrafficLight cls={cls} />}
           <Text style={styles.rangeNote}>Normal BMI: 18.5–24.9</Text>
         </View>
       );
